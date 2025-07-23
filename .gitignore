@@ -1,0 +1,70 @@
+# Bytecode / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+*.dylib
+
+# Distribution / packaging
+.Python
+env/
+venv/
+*.egg-info/
+.eggs/
+*.whl
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+# User-created files
+downloads/
+*.log
+bot_database.db
+bot_database.db-shm
+bot_database.db-wal
+
+# OS generated files # OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.thumbs
+*.ini
+*.bak
+*.tmp
+
+# Editor/IDE-specific files - generic
+.idea/
+.vscode/
+*.project
+*.workspace
+*.sublime-project
+*.sublime-workspace
+
+# Editor/IDE-specific files - JetBrains
+*.iml
+*.ipr
+*.iws
+.idea/*
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries
+.idea/copyright
+.idea/codeStyles
+# Sensitive settings, it's better to have them in .env
+# config/settings.py
+
+# Environment files - it's better to have them in .env
+# config/logging.yaml
+.env
+
+# --- Temporary Files ---
+# Если будете создавать скрипты для разовых задач
+generate_key.py
