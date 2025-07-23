@@ -113,6 +113,15 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'dialog_error_delete_active': "Нельзя удалить активный диалог. Сначала переключитесь на другой.",
         # --- Команды и Состояния ---
         'cmd_reset_success': "✅ Контекст текущего диалога сброшен.",
+        # --- НОВЫЙ РАЗДЕЛ: Долговременная память ---
+        'memory_prompt_file': "📄 **Запомнить документ**\n\nОтправьте мне файл в формате `.txt` или `.md`, и я добавлю его содержимое в долговременную память **текущего диалога** (`{dialog_name}`).\n\nМаксимальный размер файла: 1 МБ.",
+        'memory_file_processing': "⏳ Обрабатываю и запоминаю файл...",
+        'memory_file_success': "✅ Файл `{file_name}` успешно добавлен в память диалога `{dialog_name}`.",
+        'memory_file_error_type': "❌ Неверный формат. Пожалуйста, отправьте файл `.txt` или `.md`.",
+        'memory_file_error_size': "❌ Файл слишком большой. Максимальный размер — 1 МБ.",
+        'memory_file_error_read': "❌ Не удалось прочитать содержимое файла. Убедитесь, что он в кодировке UTF-8.",
+        'memory_file_error_general': "❌ Произошла ошибка при обработке файла.",
+
         'set_api_key_prompt': "Пожалуйста, отправьте ваш Google AI API ключ. Сообщение с ключом будет удалено.",
         'history_prompt': "🗓️ Пожалуйста, выберите дату для просмотра истории текущего диалога:",
         'translate_prompt': "Выберите язык, на который нужно перевести текст:",
@@ -333,6 +342,15 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'dialog_error_delete_active': "You cannot delete the active dialog. Switch to another one first.",
         # --- Commands and States ---
         'cmd_reset_success': "✅ The context of the current dialog has been reset.",
+        # --- NEW SECTION: Long-term Memory ---
+        'memory_prompt_file': "📄 **Memorize Document**\n\nPlease send a `.txt` or `.md` file, and I will add its content to the long-term memory of the **current dialog** (`{dialog_name}`).\n\nMaximum file size: 1 MB.",
+        'memory_file_processing': "⏳ Processing and memorizing the file...",
+        'memory_file_success': "✅ File `{file_name}` has been successfully added to the memory of dialog `{dialog_name}`.",
+        'memory_file_error_type': "❌ Invalid format. Please send a `.txt` or `.md` file.",
+        'memory_file_error_size': "❌ The file is too large. The maximum size is 1 MB.",
+        'memory_file_error_read': "❌ Could not read the file's content. Please ensure it is UTF-8 encoded.",
+        'memory_file_error_general': "❌ An error occurred while processing the file.",
+
         'set_api_key_prompt': "Please send your Google AI API key. The message with the key will be deleted.",
         'history_prompt': "🗓️ Please select a date to view the history of the current dialog:",
         'translate_prompt': "Select the language to translate the text into:",

@@ -43,6 +43,7 @@ from config.settings import (
 from database import db_manager
 from services import gemini_service
 from services.gemini_service import GeminiAPIError
+from services.vector_store_manager import VectorStoreManager
 from features import profile_manager
 from features.profile_manager import QUESTIONNAIRE, ask_question
 from .decorators import admin_required
@@ -390,6 +391,71 @@ async def _handle_state_feedback(message: types.Message, bot: AsyncTeleBot):
         except Exception as e:
             logger.error(f"Не удалось отправить уведомление о фидбэке администратору: {e}", extra={'user_id': 'System'})
 
+async def _handle_state_document_memorize(message: types.Message, bot: AsyncTeleBot):
+    """Логика для состояния STATE_WAITING_FOR_DOCUMENT."""
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+
+    # 1. Проверяем, что прислали именно документ
+    if message.content_type != 'document':
+        await bot.reply_to(message, loc.get_text('memory_file_error_type', lang_code), reply_markup=main_keyboard)
+        await bot.delete_state(user_id, message.chat.id)
+        return
+
+    doc = message.document
+    file_name = doc.file_name or "document"
+    
+    # 2. Проверяем расширение файла
+    if not (file_name.lower().endswith('.txt') or file_name.lower().endswith('.md')):
+        await bot.reply_to(message, loc.get_text('memory_file_error_type', lang_code), reply_markup=main_keyboard)
+        await bot.delete_state(user_id, message.chat.id)
+        return
+
+    # 3. Проверяем размер файла (1 MB limit)
+    if doc.file_size > 1024 * 1024:
+        await bot.reply_to(message, loc.get_text('memory_file_error_size', lang_code), reply_markup=main_keyboard)
+        await bot.delete_state(user_id, message.chat.id)
+        return
+
+    status_msg = await bot.reply_to(message, loc.get_text('memory_file_processing', lang_code))
+
+    try:
+        # 4. Скачиваем и читаем файл
+        file_info = await bot.get_file(doc.file_id)
+        downloaded_file = await bot.download_file(file_info.file_path)
+        
+        try:
+            file_content = downloaded_file.decode('utf-8')
+        except UnicodeDecodeError:
+            await bot.edit_message_text(loc.get_text('memory_file_error_read', lang_code), user_id, status_msg.message_id, reply_markup=main_keyboard)
+            await bot.delete_state(user_id, message.chat.id)
+            return
+
+        # 5. Интеграция с VectorStoreManager
+        fernet_instance = tg_helpers.user_session_keys.get(user_id)
+        api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
+        active_dialog_id = await db_manager.get_active_dialog_id(user_id)
+
+        if not all([fernet_instance, api_key, active_dialog_id]):
+            raise ValueError("Сессия, API-ключ или активный диалог не найдены.")
+
+        vector_store = VectorStoreManager(api_key=api_key)
+        await vector_store.add_dialog_text(active_dialog_id, file_content)
+
+        # 6. Сообщаем об успехе
+        dialog_info = await db_manager.get_user_context_info(user_id)
+        dialog_name = dialog_info.get('dialog_name', 'текущего') if dialog_info else 'текущего'
+        success_text = loc.get_text('memory_file_success', lang_code).format(file_name=file_name, dialog_name=dialog_name)
+        await bot.edit_message_text(success_text, user_id, status_msg.message_id)
+
+    except Exception as e:
+        logger.exception(f"Ошибка при обработке файла для памяти: {e}", extra={'user_id': str(user_id)})
+        await bot.edit_message_text(loc.get_text('memory_file_error_general', lang_code), user_id, status_msg.message_id)
+    finally:
+        await bot.delete_state(user_id, message.chat.id)
+        await bot.send_message(user_id, "Можете продолжать общение.", reply_markup=main_keyboard)
+
 # ===================================================================================
 # --- ОБЩИЙ ОБРАБОТЧИК ДЛЯ СООБЩЕНИЙ БЕЗ СОСТОЯНИЯ (ИСПРАВЛЕННЫЙ) ---
 # ===================================================================================
@@ -538,6 +604,9 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
         
     elif current_state == STATE_WAITING_FOR_FEEDBACK:
         await _handle_state_feedback(message, bot)
+
+    elif current_state == settings.STATE_WAITING_FOR_DOCUMENT:
+        await _handle_state_document_memorize(message, bot)
         
     elif current_state is None:
         # Если состояний нет, обрабатываем как обычное сообщение

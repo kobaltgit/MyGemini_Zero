@@ -166,6 +166,29 @@ async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
     await bot.send_message(user_id, text, reply_markup=dialogs_keyboard)
 
 @session_required
+async def handle_memorize_file(message: types.Message, bot: AsyncTeleBot):
+    """Обработчик команды /memorize_file для загрузки документа в память."""
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    
+    # Получаем название текущего диалога для отображения в сообщении
+    active_dialog_id = await db_manager.get_active_dialog_id(user_id)
+    dialog_info = await db_manager.get_user_context_info(user_id)
+    dialog_name = dialog_info.get('dialog_name', 'N/A') if dialog_info else 'N/A'
+
+    if not active_dialog_id:
+        # Эта проверка на всякий случай, т.к. сессия должна гарантировать наличие диалога
+        await bot.reply_to(message, "Ошибка: не найден активный диалог.")
+        return
+
+    # Устанавливаем состояние ожидания документа
+    await bot.set_state(user_id, settings.STATE_WAITING_FOR_DOCUMENT, message.chat.id)
+    
+    # Отправляем пользователю инструкцию
+    prompt_text = loc.get_text('memory_prompt_file', lang_code).format(dialog_name=dialog_name)
+    await bot.send_message(user_id, prompt_text, reply_markup=types.ReplyKeyboardRemove())
+
+@session_required
 async def handle_translate(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /translate."""
     user_id = message.from_user.id
@@ -297,6 +320,7 @@ def register_command_handlers(bot: AsyncTeleBot):
     bot.register_message_handler(handle_translate, commands=['translate'], pass_bot=True)
     bot.register_message_handler(handle_usage, commands=['usage'], pass_bot=True)
     bot.register_message_handler(handle_dialogs, commands=['dialogs'], pass_bot=True)
+    bot.register_message_handler(handle_memorize_file, commands=['memorize', 'memorize_file'], pass_bot=True)
 
     # Регистрация кнопок-синонимов из оригинального файла
     bot.register_message_handler(handle_dialogs,

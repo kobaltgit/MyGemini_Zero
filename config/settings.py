@@ -268,6 +268,7 @@ STATE_WAITING_FOR_DRAW_PROMPT = 'waiting_for_draw_prompt'
 # Dialogs
 STATE_WAITING_FOR_NEW_DIALOG_NAME = 'waiting_for_new_dialog_name'
 STATE_WAITING_FOR_RENAME_DIALOG = 'waiting_for_rename_dialog'
+STATE_WAITING_FOR_DOCUMENT = 'waiting_for_document'
 
 # --- НОВЫЕ СОСТОЯНИЯ ДЛЯ АДМИН-ПАНЕЛИ ---
 STATE_ADMIN_WAITING_FOR_BROADCAST_MSG = 'admin_waiting_for_broadcast_msg'
