@@ -43,6 +43,7 @@ from services import gemini_service
 from features import personal_account
 from logger_config import get_logger
 from utils import text_helpers as th
+from .decorators import session_required # <-- ИМПОРТИРУЕМ ДЕКОРАТОР
 
 logger = get_logger(__name__)
 
@@ -93,21 +94,17 @@ async def handle_cancel(message: types.Message, bot: AsyncTeleBot):
     main_keyboard = mk.create_main_keyboard(lang_code, user_id) if user_id in tg_helpers.user_session_keys else types.ReplyKeyboardRemove()
     await bot.send_message(message.chat.id, "Действие отменено.", reply_markup=main_keyboard)
 
+@session_required
 async def handle_profile(message: types.Message, bot: AsyncTeleBot):
     """(НОВАЯ КОМАНДА) Обработчик команды /profile. Начинает процесс заполнения анкеты."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     # TODO: Логика анкеты
     await bot.reply_to(message, "Функционал профиля в разработке.")
 
 # --- Команды, требующие активной сессии (ОРИГИНАЛЬНЫЕ КОМАНДЫ + ПРОВЕРКА СЕССИИ) ---
 
+@session_required
 async def handle_help(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /help."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-        
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     help_text = loc.get_text('cmd_help_text', lang_code)
@@ -118,12 +115,9 @@ async def handle_help(message: types.Message, bot: AsyncTeleBot):
         if support_markup:
             await bot.send_message(user_id, loc.get_text('support_prompt', lang_code), reply_markup=support_markup)
 
-
+@session_required
 async def handle_reset(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /reset."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     await bot.delete_state(user_id, message.chat.id)
     active_dialog_id = await db_manager.get_active_dialog_id(user_id)
@@ -135,24 +129,18 @@ async def handle_reset(message: types.Message, bot: AsyncTeleBot):
     main_keyboard = mk.create_main_keyboard(lang_code, user_id)
     await bot.reply_to(message, reset_text, reply_markup=main_keyboard)
 
-
+@session_required
 async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /set_api_key."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = loc.get_text('set_api_key_prompt', lang_code)
     await bot.set_state(user_id, STATE_WAITING_FOR_API_KEY, message.chat.id)
     await bot.reply_to(message, text, reply_markup=types.ReplyKeyboardRemove())
 
-
+@session_required
 async def handle_history(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /history."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     calendar_markup = mk.create_calendar_keyboard()
@@ -160,47 +148,35 @@ async def handle_history(message: types.Message, bot: AsyncTeleBot):
     await bot.send_message(user_id, text, reply_markup=calendar_markup)
     await bot.set_state(user_id, STATE_WAITING_FOR_HISTORY_DATE, message.chat.id)
 
-
+@session_required
 async def handle_settings(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /settings."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     settings_markup = await mk.create_settings_keyboard(user_id)
     await bot.send_message(user_id, loc.get_text('settings_title', lang_code), reply_markup=settings_markup)
 
-
+@session_required
 async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /dialogs."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = f"{loc.get_text('dialogs_menu_title', lang_code)}\n\n{loc.get_text('dialogs_menu_desc', lang_code)}"
     dialogs_keyboard = await mk.create_dialogs_menu_keyboard(user_id)
     await bot.send_message(user_id, text, reply_markup=dialogs_keyboard)
 
-
+@session_required
 async def handle_translate(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /translate."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = loc.get_text('translate_prompt', lang_code)
     lang_markup = mk.create_language_selection_keyboard()
     await bot.send_message(user_id, text, reply_markup=lang_markup)
 
-
+@session_required
 async def handle_personal_account_button(message: types.Message, bot: AsyncTeleBot):
     """Обработчик нажатия на кнопку 'Личный кабинет'."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
@@ -216,12 +192,9 @@ async def handle_personal_account_button(message: types.Message, bot: AsyncTeleB
         reply_markup=main_keyboard
     )
 
-
+@session_required
 async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /usage для отображения статистики расходов."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-        
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
@@ -286,24 +259,18 @@ async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     
     await bot.send_message(user_id, report_text, parse_mode='MarkdownV2')
 
-
+@session_required
 async def handle_full_guide(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /help_guide, отправляет полную справку."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     await tg_helpers.send_typing_action(bot, user_id)
     guide_text = guide_manager.get_full_guide(lang_code)
     await tg_helpers.send_long_message(bot, user_id, guide_text)
 
-
+@session_required
 async def handle_api_key_info(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /apikey_info, отправляет секцию про API ключ."""
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-        
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     await tg_helpers.send_typing_action(bot, user_id)

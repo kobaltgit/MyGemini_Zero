@@ -58,3 +58,21 @@ def admin_required(func):
             return
         return await func(message_or_call, *args, **kwargs)
     return wrapper
+
+def session_required(func):
+    """
+    Декоратор для проверки, активна ли сессия пользователя.
+    Если нет, запрашивает пароль и прерывает выполнение функции.
+    """
+    @wraps(func)
+    async def wrapper(message: types.Message, bot: AsyncTeleBot, *args, **kwargs):
+        # Импортируем хелпер прямо здесь, чтобы избежать циклических зависимостей
+        from . import telegram_helpers as tg_helpers
+
+        if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+            # Если сессия не прошла проверку, просто выходим
+            return
+        
+        # Если проверка пройдена, вызываем оригинальную функцию
+        return await func(message, bot, *args, **kwargs)
+    return wrapper

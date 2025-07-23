@@ -364,6 +364,47 @@ async def get_conversation_history(dialog_id: int, fernet_instance: Fernet, limi
     
     return list(reversed(decrypted_history))
 
+async def get_conversation_history_by_date(dialog_id: int, selected_date: datetime.date, fernet_instance: Fernet) -> List[Dict[str, Any]]:
+    """
+    Получает и расшифровывает историю сообщений для конкретного диалога за указанную дату.
+
+    Args:
+        dialog_id: ID диалога.
+        selected_date: Дата, за которую нужно получить историю.
+        fernet_instance: Экземпляр Fernet для расшифровки.
+
+    Returns:
+        Список словарей с расшифрованными сообщениями, отсортированный по времени.
+    """
+    # Создаем временные рамки для запроса (от начала до конца указанного дня)
+    start_of_day = datetime.datetime.combine(selected_date, datetime.time.min).replace(tzinfo=datetime.timezone.utc)
+    end_of_day = datetime.datetime.combine(selected_date, datetime.time.max).replace(tzinfo=datetime.timezone.utc)
+    
+    # Конвертируем в ISO формат для сравнения с текстом в БД
+    start_iso = start_of_day.isoformat()
+    end_iso = end_of_day.isoformat()
+
+    query = """
+        SELECT role, message_text 
+        FROM conversations 
+        WHERE dialog_id = ? AND timestamp BETWEEN ? AND ?
+        ORDER BY timestamp ASC
+    """
+    rows = await _execute_query(query, (dialog_id, start_iso, end_iso), fetch_all=True)
+    if not rows:
+        return []
+
+    decrypted_history = []
+    for row in rows:
+        decrypted_text = crypto_helpers.decrypt_data(row['message_text'], fernet_instance)
+        if decrypted_text is None:
+            db_logger.error(f"Не удалось расшифровать сообщение в dialog_id {dialog_id}. Возможно, неверный ключ сессии.")
+            decrypted_text = "[Ошибка расшифровки]"
+        
+        decrypted_history.append({'role': row['role'], 'message_text': decrypted_text})
+    
+    return decrypted_history
+
 
 # =================================================================================
 # === Остальные функции (метаданные), не требующие значительных изменений ===
