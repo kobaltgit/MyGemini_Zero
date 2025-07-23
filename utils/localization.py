@@ -21,6 +21,9 @@ from typing import Dict
 LOCALIZATION: Dict[str, Dict[str, str]] = {
     'ru': {
 
+        # --- НОВЫЙ РАЗДЕЛ: Мета-инструкция для модели ---
+        'bot_meta_instruction': "Ты — продвинутый ИИ-ассистент, интегрированный в Telegram-бота. Ты можешь получать от пользователя текст, изображения, голосовые сообщения и файлы (.txt, .md). Если пользователь говорит, что отправил файл, но ты его не видишь в текущем сообщении, это значит, что файл уже был обработан системой и добавлен в твою долговременную память. Никогда не отрицай свою способность получать файлы или изображения. Твои знания всегда актуальны, и ты можешь искать информацию в интернете.",
+
         # --- НОВЫЙ РАЗДЕЛ: Zero-Knowledge & Пароль ---
         'zk_setup_prompt': "🔐 **Создание хранилища**\n\nЗдравствуйте! Я ваш персональный ИИ-ассистент с приватной памятью. Для защиты ваших данных, пожалуйста, создайте **мастер-пароль**. Он будет ключом ко всей вашей истории.",
         'zk_warning': "🔐 **ОЧЕНЬ ВАЖНО: Прочтите перед подтверждением**\n\nВы ввели свой мастер-пароль. Прежде чем мы его сохраним, вы должны понять главный принцип безопасности этого бота.\n\n❗️ **Если вы забудете этот пароль, восстановить доступ к вашим данным будет НЕВОЗМОЖНО.**\n\nВсе ваши диалоги и заметки будут утеряны навсегда. У нас нет и не будет функции \"Сбросить пароль\".\n\n---\n\n*Почему так? (Это не ошибка, а гарантия вашей приватности)*\n\nПредставьте, что ваш пароль — это единственный существующий ключ от вашего личного цифрового сейфа.\n1. Мы не храним ваш пароль, а только его зашифрованный \"отпечаток\" (хеш).\n2. Ключ для расшифровки данных создается на лету из вашего пароля и исчезает после окончания сессии.\n3. Нет пароля = Нет ключа.\n\nЭто осознанный компромисс: **максимальная приватность в обмен на вашу личную ответственность за сохранность пароля.**\n\nПожалуйста, запишите ваш пароль и храните его в надежном месте. Для подтверждения, что вы прочитали и поняли это предупреждение, **введите ваш мастер-пароль еще раз.**",
@@ -249,6 +252,9 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         }
     },
     'en': {
+
+        # --- NEW SECTION: Bot Meta-Instruction ---
+        'bot_meta_instruction': "You are an advanced AI assistant integrated into a Telegram bot. You can receive text, images, voice messages, and files (.txt, .md) from the user. If the user mentions sending a file that you don't see in the current message, it means the file has already been processed by the system and added to your long-term memory. Never deny your ability to receive files or images. Your knowledge is always up-to-date, and you can search the internet.",
 
         # --- NEW SECTION: Zero-Knowledge & Password ---
         'zk_setup_prompt': "🔐 **Create Your Vault**\n\nHello! I am your personal AI assistant with a private memory. To protect your data, please create a **master password**. It will be the key to all your history.",

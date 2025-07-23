@@ -166,18 +166,24 @@ def reset_dialog_chat(dialog_id: int):
 
 async def _get_system_instruction_text(user_id: int, fernet_instance: Fernet) -> Optional[str]:
     """
-    Формирует текст системной инструкции, объединяя профиль пользователя и персону/стиль.
+    Формирует текст системной инструкции, объединяя мета-инструкцию,
+    профиль пользователя и персону/стиль.
     """
     lang_code = await db_manager.get_user_language(user_id)
     system_prompt_parts = []
 
-    # --- Шаг 1: Загрузка и форматирование профиля пользователя ---
+    # --- Шаг 1: Добавляем мета-инструкцию ("паспорт") ---
+    # Импортируем локализацию здесь, чтобы избежать циклических зависимостей
+    from utils import localization as loc
+    meta_instruction = loc.get_text('bot_meta_instruction', lang_code)
+    system_prompt_parts.append(meta_instruction)
+    system_prompt_parts.append("---")
+
+    # --- Шаг 2: Загрузка и форматирование профиля пользователя ---
     user_profile = await db_manager.get_user_profile(user_id, fernet_instance)
     if user_profile:
-        # Заголовок для LLM, объясняющий, что это за данные
-        system_prompt_parts.append("Ты — персональный ИИ-ассистент. Вот ключевая информация о твоем пользователе, которую ты должен всегда учитывать для персонализации ответов:")
+        system_prompt_parts.append("Вот ключевая информация о твоем пользователе, которую ты должен всегда учитывать для персонализации ответов:")
         
-        # Карта для красивого отображения ключей профиля
         profile_key_map = {
             'role': 'Профессия', 'industry': 'Сфера', 'projects': 'Текущие проекты',
             'stack': 'Инструменты', 'purpose': 'Основная цель использования',
@@ -189,10 +195,10 @@ async def _get_system_instruction_text(user_id: int, fernet_instance: Fernet) ->
             display_key = profile_key_map.get(key, key.capitalize())
             profile_text += f"- {display_key}: {value}\n"
         
-        system_prompt_parts.append(profile_text)
-        system_prompt_parts.append("---") # Разделитель
+        system_prompt_parts.append(profile_text.strip())
+        system_prompt_parts.append("---")
 
-    # --- Шаг 2: Добавление персоны или стиля (существующая логика) ---
+    # --- Шаг 3: Добавление персоны или стиля ---
     persona_prompt = ""
     persona_id = await db_manager.get_user_persona(user_id)
 
@@ -214,10 +220,6 @@ async def _get_system_instruction_text(user_id: int, fernet_instance: Fernet) ->
     if persona_prompt:
         system_prompt_parts.append(persona_prompt)
 
-    # --- Шаг 3: Сборка и возврат финальной инструкции ---
-    if not system_prompt_parts:
-        return None
-        
     return "\n".join(system_prompt_parts).strip()
 
 async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], api_key: str, fernet_instance: Fernet) -> Tuple[str, List[Dict[str, str]]]:
@@ -290,7 +292,7 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
     if user_message_for_db:
         relevant_chunks = await vector_store.search_relevant_chunks(active_dialog_id, user_message_for_db, n_results=3)
         if relevant_chunks:
-            context_header = "Контекст из предыдущих обсуждений:\n---"
+            context_header = "ВАЖНО: Сначала ищи ответ в предоставленном ниже контексте из долговременной памяти. Используй интернет-поиск только если в этом контексте нет ответа. Контекст из памяти:\n---"
             formatted_chunks = "\n".join(f"- {chunk}" for chunk in relevant_chunks)
             long_term_memory_context = f"{context_header}\n{formatted_chunks}\n---\n"
 
