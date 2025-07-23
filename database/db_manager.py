@@ -1,4 +1,20 @@
 # File: MyGemini_Zero/database/db_manager.py
+
+# Copyright (C) 2025 kobaltgit
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 """
 Модуль для асинхронного управления реляционной базой данных SQLite.
 
@@ -529,6 +545,23 @@ async def get_user_context_info(user_id: int) -> Optional[Dict[str, Any]]:
     """
     result = await _execute_query(query, (user_id,), fetch_one=True)
     return dict(result) if result else None
+
+async def update_last_session_time(user_id: int):
+    """Обновляет временную метку последней активности пользователя."""
+    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    query = "UPDATE users SET last_session_ts = ? WHERE user_id = ?"
+    await _execute_query(query, (now_str, user_id), is_write_operation=True)
+
+async def get_last_session_time(user_id: int) -> Optional[datetime.datetime]:
+    """Получает время последней активности пользователя в виде объекта datetime."""
+    query = "SELECT last_session_ts FROM users WHERE user_id = ?"
+    result = await _execute_query(query, (user_id,), fetch_one=True)
+    if result and result['last_session_ts']:
+        try:
+            return datetime.datetime.fromisoformat(result['last_session_ts'])
+        except (ValueError, TypeError):
+            return None
+    return None
 
 # --- Управление профилем пользователя (ZK) ---
 

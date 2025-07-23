@@ -156,6 +156,17 @@ After launching, find the bot in Telegram and send the `/start` command. It will
 
 
 ---
+
+## License
+
+This project is distributed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+
+A key condition of this license is that if you use this code to create a public network service (for example, your own Telegram bot based on it), you are obliged to provide users of this service with access to the full source code, including all your modifications.
+
+This protects the project from being used in closed commercial products and ensures that all improvements made by the community are returned to the community.
+
+The full text of the license can be found in the [LICENSE](LICENSE) file.
+
 ## 📞 Support and Feedback
 If you have questions, suggestions, or found bugs, please create an issue in the GitHub repository or contact [me](mailto:kobaltmail@gmail.com).
 
