@@ -28,3 +28,6 @@ langchain>=0.2.0
 # Vector Database for long-term memory
 # ChromaDB - легковесная векторная БД, идеальна для старта
 chromadb>=0.5.0
+
+# Google Generative AI integration for LangChain
+langchain-google-genai>=1.0.3
