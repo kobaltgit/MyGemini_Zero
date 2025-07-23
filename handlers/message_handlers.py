@@ -165,6 +165,7 @@ async def _handle_state_password_unlock(message: types.Message, bot: AsyncTeleBo
         salt = await db_manager.get_user_salt(user_id)
         fernet_instance = crypto_helpers.get_fernet_instance(password, salt)
         tg_helpers.user_session_keys[user_id] = fernet_instance
+        await db_manager.update_last_session_time(user_id)
         await bot.delete_state(user_id, message.chat.id)
         main_keyboard = mk.create_main_keyboard(lang_code, user_id)
         await bot.send_message(user_id, loc.get_text('zk_unlock_success', lang_code), reply_markup=main_keyboard)
