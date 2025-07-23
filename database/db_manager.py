@@ -64,11 +64,12 @@ def _execute_sync(query: str, params: tuple = (), fetch_one: bool = False, fetch
             elif query.strip().upper().startswith(("UPDATE", "DELETE")):
                 result = cursor.rowcount
             conn.commit()
-        else: # Для SELECT операций с агрегацией
-             if "count(" in query.lower() or "sum(" in query.lower():
-                count_result = cursor.fetchone()
-                result = count_result[0] if count_result and count_result[0] is not None else 0
-
+        # Этот блок для простых агрегирующих запросов (возвращающих одно значение),
+        # которые вызываются без fetch_one=True или fetch_all=True.
+        elif not fetch_one and not fetch_all and ("count(" in query.lower() or "sum(" in query.lower()):
+            aggregation_result = cursor.fetchone()
+            # Возвращаем первое значение из кортежа или 0, если результат None
+            result = aggregation_result[0] if aggregation_result and aggregation_result[0] is not None else 0
 
     except sqlite3.Error as e:
         db_logger.exception(f"Ошибка выполнения SQL: {query} | Params: {params} | Error: {e}")
@@ -79,7 +80,6 @@ def _execute_sync(query: str, params: tuple = (), fetch_one: bool = False, fetch
         if conn:
             conn.close()
     return result
-
 
 async def _execute_query(query: str, params: tuple = (), fetch_one: bool = False, fetch_all: bool = False,
                          is_write_operation: bool = False) -> Optional[Any]:
@@ -418,6 +418,18 @@ async def get_user_language(user_id: int) -> str:
     result = await _execute_query(query, (user_id,), fetch_one=True)
     return result['language_code'] if result and result['language_code'] else 'ru'
 
+async def set_user_bot_style(user_id: int, style_code: str):
+    """Устанавливает стиль общения бота для пользователя."""
+    query = "UPDATE users SET bot_style = ? WHERE user_id = ?"
+    await _execute_query(query, (style_code, user_id), is_write_operation=True)
+
+
+async def get_user_bot_style(user_id: int) -> str:
+    """Получает стиль общения бота для пользователя."""
+    query = "SELECT bot_style FROM users WHERE user_id = ?"
+    result = await _execute_query(query, (user_id,), fetch_one=True)
+    return result['bot_style'] if result and result['bot_style'] else 'default'
+
 async def set_user_gemini_model(user_id: int, model_name: str):
     query = "UPDATE users SET gemini_model = ? WHERE user_id = ?"
     await _execute_query(query, (model_name, user_id), is_write_operation=True)
@@ -442,16 +454,53 @@ async def get_first_interaction_date(user_id: int) -> Optional[str]:
     return result['first_interaction_date'] if result else None
 
 async def get_token_usage_by_period(user_id: int, period: str) -> Dict[str, int]:
+    """Получает статистику использования токенов по периоду.
+
+    Использует явные диапазоны дат в формате ISO, что является более надежным
+    методом, чем использование встроенных функций даты SQLite, особенно при
+    работе с часовыми поясами.
+
+    Args:
+        user_id: ID пользователя, для которого запрашивается статистика.
+        period: Период для расчета ('today' или 'month').
+
+    Returns:
+        Словарь с количеством prompt, completion и total токенов.
+    """
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    query: str
+    params: tuple
+
     if period == 'today':
-        start_date_str = datetime.date.today().isoformat() + "T00:00:00Z"
+        start_of_day = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = start_of_day + datetime.timedelta(days=1)
+        
+        query = """
+            SELECT SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) 
+            FROM conversations 
+            WHERE user_id = ? AND timestamp >= ? AND timestamp < ?
+        """
+        params = (user_id, start_of_day.isoformat(), end_of_day.isoformat())
+
     elif period == 'month':
-        start_date_str = datetime.date.today().replace(day=1).isoformat() + "T00:00:00Z"
+        start_of_month = utc_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        # Вычисляем первый день следующего месяца для корректного диапазона
+        if start_of_month.month == 12:
+            end_of_month = start_of_month.replace(year=start_of_month.year + 1, month=1)
+        else:
+            end_of_month = start_of_month.replace(month=start_of_month.month + 1)
+
+        query = """
+            SELECT SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) 
+            FROM conversations 
+            WHERE user_id = ? AND timestamp >= ? AND timestamp < ?
+        """
+        params = (user_id, start_of_month.isoformat(), end_of_month.isoformat())
+        
     else:
         return {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
-    query = "SELECT SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) FROM conversations WHERE user_id = ? AND timestamp >= ?"
-    params = (user_id, start_date_str)
-    
     result_row = await _execute_query(query, params, fetch_one=True)
     
     if result_row and result_row[0] is not None:

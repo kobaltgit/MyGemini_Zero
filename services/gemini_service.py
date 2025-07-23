@@ -111,17 +111,32 @@ async def _make_gemini_request_async(api_key: str, url: str, payload: Optional[D
     raise GeminiAPIError("Не удалось получить ответ от API после нескольких попыток.", details={"error": {"message": "service_unavailable"}})
 
 
-async def _get_dialog_chat_history(dialog_id: int) -> List[Dict[str, Any]]:
+async def _get_dialog_chat_history(dialog_id: int, fernet_instance: Fernet) -> List[Dict[str, Any]]:
     """
     Возвращает или создает историю чата для диалога из кэша или БД.
+
+    Если история есть в LRU-кэше, возвращает ее. Иначе, загружает
+    зашифрованную историю из базы данных, расшифровывает ее с помощью
+    предоставленного ключа сессии, форматирует для Gemini API и
+    сохраняет в кэш.
+
+    Args:
+        dialog_id: ID диалога, для которого нужно получить историю.
+        fernet_instance: Экземпляр Fernet с ключом сессии для расшифровки.
+
+    Returns:
+        Список словарей, представляющий историю чата в формате Gemini.
     """
     if dialog_id not in dialog_chats_cache:
         gemini_logger.debug(f"Кэш истории для dialog_id: {dialog_id} не найден. Загрузка из БД.")
-        history_from_db = await db_manager.get_conversation_history(dialog_id, limit=20)
+        # Передаем ключ для расшифровки истории из БД
+        history_from_db = await db_manager.get_conversation_history(dialog_id, fernet_instance, limit=20)
         gemini_history = []
         for item in history_from_db:
             role = 'user' if item.get('role') == 'user' else 'model'
-            gemini_history.append({"role": role, "parts": [{"text": item.get('message_text', '')}]})
+            # Убедимся, что message_text не None
+            message_text = item.get('message_text', '')
+            gemini_history.append({"role": role, "parts": [{"text": message_text}]})
         dialog_chats_cache[dialog_id] = gemini_history
         gemini_logger.info(f"История для dialog_id: {dialog_id} загружена в кэш ({len(gemini_history)} сообщений).")
     return dialog_chats_cache[dialog_id]

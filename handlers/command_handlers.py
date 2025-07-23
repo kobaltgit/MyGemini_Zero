@@ -26,6 +26,7 @@ from database import db_manager
 from services import gemini_service
 from features import personal_account
 from logger_config import get_logger
+from utils import text_helpers as th
 
 # --- НОВЫЙ БЛОК: Сессионный кэш для ZK ---
 # Сессионный кэш для хранения экземпляров Fernet (ключей шифрования).
@@ -232,21 +233,17 @@ async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
 
-    # --- ПРОВЕРКА СЕССИИ ---
     if user_id not in user_session_keys:
         await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
         return
         
     fernet_instance = user_session_keys.get(user_id)
-    # --- КОНЕЦ ПРОВЕРКИ ---
 
-    # Проверяем наличие ключа, расшифровывая его
     api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
     if not api_key:
         await bot.reply_to(message, loc.get_text('api_key_needed_for_feature', lang_code))
         return
 
-    # Остальная логика остается без изменений
     usage_today = await db_manager.get_token_usage_by_period(user_id, 'today')
     usage_month = await db_manager.get_token_usage_by_period(user_id, 'month')
 
@@ -260,31 +257,46 @@ async def handle_usage(message: types.Message, bot: AsyncTeleBot):
 
     cost_today = calculate_cost(usage_today)
     cost_month = calculate_cost(usage_month)
+    
+    cost_today_str = f"{cost_today:.4f}".replace('.', '\\.')
+    cost_month_str = f"{cost_month:.4f}".replace('.', '\\.')
+    
+    # Экранируем ВСЕ текстовые части перед сборкой
+    title = th.escape_markdown(loc.get_text('usage_title', lang_code))
+    today_header = th.escape_markdown(loc.get_text('usage_today_header', lang_code))
+    month_header = th.escape_markdown(loc.get_text('usage_month_header', lang_code))
+    prompt_tokens_text = th.escape_markdown(loc.get_text('usage_prompt_tokens', lang_code))
+    completion_tokens_text = th.escape_markdown(loc.get_text('usage_completion_tokens', lang_code))
+    total_tokens_text = th.escape_markdown(loc.get_text('usage_total_tokens', lang_code))
+    estimated_cost_text = th.escape_markdown(loc.get_text('usage_estimated_cost', lang_code))
+    no_data_text = th.escape_markdown(loc.get_text('usage_no_data', lang_code))
+    cost_notice = th.escape_markdown(loc.get_text('usage_cost_notice', lang_code))
 
-    report_text = f"{loc.get_text('usage_title', lang_code)}\n\n"
-    report_text += f"{loc.get_text('usage_today_header', lang_code)}\n"
+    report_text = f"*{title}*\n\n"
+    report_text += f"*{today_header}*\n"
     if usage_today['total_tokens'] > 0:
         report_text += (
-            f"`{loc.get_text('usage_prompt_tokens', lang_code):<25}: {usage_today['prompt_tokens']:,}`\n"
-            f"`{loc.get_text('usage_completion_tokens', lang_code):<25}: {usage_today['completion_tokens']:,}`\n"
-            f"`{loc.get_text('usage_total_tokens', lang_code):<25}: {usage_today['total_tokens']:,}`\n"
-            f"`{loc.get_text('usage_estimated_cost', lang_code):<25}: ${cost_today:.4f}`\n\n"
+            f"`{prompt_tokens_text:<25}: {usage_today['prompt_tokens']:,}`\n"
+            f"`{completion_tokens_text:<25}: {usage_today['completion_tokens']:,}`\n"
+            f"`{total_tokens_text:<25}: {usage_today['total_tokens']:,}`\n"
+            f"`{estimated_cost_text:<25}: ${cost_today_str}`\n\n"
         )
     else:
-        report_text += f"_{loc.get_text('usage_no_data', lang_code)}_\n\n"
+        report_text += f"_{no_data_text}_\n\n"
 
-    report_text += f"{loc.get_text('usage_month_header', lang_code)}\n"
+    report_text += f"*{month_header}*\n"
     if usage_month['total_tokens'] > 0:
         report_text += (
-            f"`{loc.get_text('usage_prompt_tokens', lang_code):<25}: {usage_month['prompt_tokens']:,}`\n"
-            f"`{loc.get_text('usage_completion_tokens', lang_code):<25}: {usage_month['completion_tokens']:,}`\n"
-            f"`{loc.get_text('usage_total_tokens', lang_code):<25}: {usage_month['total_tokens']:,}`\n"
-            f"`{loc.get_text('usage_estimated_cost', lang_code):<25}: ${cost_month:.4f}`"
+            f"`{prompt_tokens_text:<25}: {usage_month['prompt_tokens']:,}`\n"
+            f"`{completion_tokens_text:<25}: {usage_month['completion_tokens']:,}`\n"
+            f"`{total_tokens_text:<25}: {usage_month['total_tokens']:,}`\n"
+            f"`{estimated_cost_text:<25}: ${cost_month_str}`"
         )
     else:
-        report_text += f"_{loc.get_text('usage_no_data', lang_code)}_"
-
-    report_text += loc.get_text('usage_cost_notice', lang_code)
+        report_text += f"_{no_data_text}_"
+    
+    report_text += f"\n{cost_notice}"
+    
     await bot.send_message(user_id, report_text, parse_mode='MarkdownV2')
 
 

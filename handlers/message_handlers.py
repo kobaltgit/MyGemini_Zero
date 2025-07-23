@@ -38,6 +38,19 @@ from logger_config import get_logger
 logger = get_logger(__name__)
 user_logger = get_logger('user_messages')
 
+# --- СПИСОК ВСЕХ КНОПОК ДЛЯ ИСКЛЮЧЕНИЯ ИЗ УНИВЕРСАЛЬНОГО ОБРАБОТЧИКА ---
+# Собираем тексты всех кнопок на всех языках, чтобы роутер их игнорировал
+BUTTON_KEYS = [
+    'btn_dialogs', 'btn_account', 'btn_usage', 'btn_settings',
+    'btn_translate', 'btn_history', 'btn_help', 'btn_reset', 'btn_admin_panel'
+]
+ALL_BUTTON_TEXTS = {
+    text
+    for lang in ['ru', 'en']
+    for key in BUTTON_KEYS
+    if (text := loc.get_text(key, lang)) != key
+}
+
 # ===================================================================================
 # --- ВНУТРЕННИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ) ---
 # ===================================================================================
@@ -86,22 +99,47 @@ async def _handle_state_password_setup(message: types.Message, bot: AsyncTeleBot
     lang_code = await db_manager.get_user_language(user_id)
     await bot.send_message(user_id, loc.get_text('zk_warning', lang_code))
 
+
 async def _handle_state_password_confirm(message: types.Message, bot: AsyncTeleBot):
-    """Логика для состояния STATE_ZK_WAITING_FOR_PASSWORD_CONFIRM."""
+    """
+    Обрабатывает подтверждение мастер-пароля.
+
+    Если пароли совпадают, сохраняет хеш и соль в БД, создает
+    и сохраняет активную сессию (ключ шифрования), а затем
+    запускает анкету для нового пользователя.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     password_two = message.text.strip()
+
     async with bot.retrieve_data(user_id, message.chat.id) as data:
         password_one = data.get('password_one')
+
     if password_one == password_two:
+        # 1. Сохраняем хеш и соль в БД
         await db_manager.set_master_password(user_id, password_one)
+
+        # 2. Создаем и сохраняем живую сессию (ключ шифрования)
+        salt = await db_manager.get_user_salt(user_id)
+        if salt:
+            fernet_instance = crypto_helpers.get_fernet_instance(password_one, salt)
+            user_session_keys[user_id] = fernet_instance
+            logger.info(f"Сессия для нового пользователя {user_id} создана и разблокирована после установки пароля.")
+        else:
+            logger.error(f"Критическая ошибка: не удалось получить соль для user_id {user_id} сразу после установки пароля.")
+            await bot.send_message(user_id, "Произошла критическая ошибка. Свяжитесь с администратором.")
+            return
+
+        # 3. Удаляем состояние и начинаем анкету
         await bot.delete_state(user_id, message.chat.id)
         await bot.send_message(user_id, loc.get_text('zk_setup_success', lang_code))
         await profile_manager.start_questionnaire(bot, message)
     else:
+        # Если пароли не совпали, начинаем процесс заново
         await bot.set_state(user_id, settings.STATE_ZK_WAITING_FOR_PASSWORD_SETUP, message.chat.id)
         await bot.send_message(user_id, loc.get_text('zk_password_mismatch', lang_code))
         await bot.send_message(user_id, loc.get_text('zk_setup_prompt', lang_code))
+
 
 async def _handle_state_password_unlock(message: types.Message, bot: AsyncTeleBot):
     """Логика для состояния STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK."""
@@ -428,6 +466,14 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
     
     lang_code = await db_manager.get_user_language(user_id)
     if not await _check_access(bot, user_id, lang_code):
+        return
+    
+    # --- НОВАЯ ПРОВЕРКА НА КНОПКИ ---
+    # Если это текстовое сообщение, и оно совпадает с текстом одной из кнопок,
+    # мы прекращаем выполнение этого обработчика. Это позволит сработать
+    # правильному, более специфичному обработчику из command_handlers.py.
+    if message.content_type == 'text' and message.text in ALL_BUTTON_TEXTS:
+        logger.debug(f"Router: Сообщение '{message.text}' распознано как кнопка. Пропускаем.")
         return
 
     current_state = await bot.get_state(user_id, user_id)
