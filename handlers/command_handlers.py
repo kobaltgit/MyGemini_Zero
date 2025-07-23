@@ -28,13 +28,7 @@ from features import personal_account
 from logger_config import get_logger
 from utils import text_helpers as th
 
-# --- НОВЫЙ БЛОК: Сессионный кэш для ZK ---
-# Сессионный кэш для хранения экземпляров Fernet (ключей шифрования).
-# Ключ - user_id, значение - экземпляр Fernet.
-user_session_keys = {}
-
 logger = get_logger(__name__)
-
 
 # --- Управляющие команды (не требуют активной сессии) ---
 
@@ -56,7 +50,7 @@ async def handle_start(message: types.Message, bot: AsyncTeleBot):
         await bot.set_state(user_id, settings.STATE_ZK_WAITING_FOR_PASSWORD_SETUP, message.chat.id)
         await bot.send_message(user_id, loc.get_text('zk_setup_prompt', lang_code), reply_markup=types.ReplyKeyboardRemove())
     else:
-        if user_id in user_session_keys:
+        if user_id in tg_helpers.user_session_keys:
             main_keyboard = mk.create_main_keyboard(lang_code, user_id)
             await bot.send_message(user_id, "С возвращением! Ваша сессия активна.", reply_markup=main_keyboard)
         else:
@@ -67,8 +61,8 @@ async def handle_start(message: types.Message, bot: AsyncTeleBot):
 async def handle_logout(message: types.Message, bot: AsyncTeleBot):
     """(НОВАЯ КОМАНДА) Обработчик команды /logout. Блокирует сессию пользователя."""
     user_id = message.from_user.id
-    if user_id in user_session_keys:
-        del user_session_keys[user_id]
+    if user_id in tg_helpers.user_session_keys:
+        del tg_helpers.user_session_keys[user_id]
         logger.info(f"Сессия для пользователя {user_id} была завершена вручную.", extra={'user_id': str(user_id)})
         await bot.reply_to(message, "Ваша сессия заблокирована. Для продолжения используйте /start.", reply_markup=types.ReplyKeyboardRemove())
     else:
@@ -80,15 +74,12 @@ async def handle_cancel(message: types.Message, bot: AsyncTeleBot):
     user_id = message.from_user.id
     await bot.delete_state(user_id, message.chat.id)
     lang_code = await db_manager.get_user_language(user_id)
-    main_keyboard = mk.create_main_keyboard(lang_code, user_id) if user_id in user_session_keys else types.ReplyKeyboardRemove()
+    main_keyboard = mk.create_main_keyboard(lang_code, user_id) if user_id in tg_helpers.user_session_keys else types.ReplyKeyboardRemove()
     await bot.send_message(message.chat.id, "Действие отменено.", reply_markup=main_keyboard)
 
 async def handle_profile(message: types.Message, bot: AsyncTeleBot):
     """(НОВАЯ КОМАНДА) Обработчик команды /profile. Начинает процесс заполнения анкеты."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
 
     # TODO: Логика анкеты
@@ -98,12 +89,10 @@ async def handle_profile(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_help(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /help."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
         
+    user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     help_text = loc.get_text('cmd_help_text', lang_code)
     main_keyboard = mk.create_main_keyboard(lang_code, user_id)
@@ -116,12 +105,10 @@ async def handle_help(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_reset(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /reset."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
 
+    user_id = message.from_user.id
     await bot.delete_state(user_id, message.chat.id)
     active_dialog_id = await db_manager.get_active_dialog_id(user_id)
     if active_dialog_id:
@@ -135,12 +122,10 @@ async def handle_reset(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /set_api_key."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
 
+    user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = loc.get_text('set_api_key_prompt', lang_code)
     await bot.set_state(user_id, STATE_WAITING_FOR_API_KEY, message.chat.id)
@@ -149,12 +134,10 @@ async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_history(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /history."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
 
+    user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     calendar_markup = mk.create_calendar_keyboard()
     text = loc.get_text('history_prompt', lang_code)
@@ -164,12 +147,10 @@ async def handle_history(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_settings(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /settings."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
 
+    user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     settings_markup = await mk.create_settings_keyboard(user_id)
     await bot.send_message(user_id, loc.get_text('settings_title', lang_code), reply_markup=settings_markup)
@@ -177,12 +158,10 @@ async def handle_settings(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /dialogs."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
-    
+
+    user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = f"{loc.get_text('dialogs_menu_title', lang_code)}\n\n{loc.get_text('dialogs_menu_desc', lang_code)}"
     dialogs_keyboard = await mk.create_dialogs_menu_keyboard(user_id)
@@ -191,30 +170,24 @@ async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_translate(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /translate."""
-    user_id = message.from_user.id
-    if user_id not in user_session_keys:
-        lang_code = await db_manager.get_user_language(user_id)
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
 
+    user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
-    lang_markup = mk.create_language_selection_keyboard()
     text = loc.get_text('translate_prompt', lang_code)
+    lang_markup = mk.create_language_selection_keyboard()
     await bot.send_message(user_id, text, reply_markup=lang_markup)
 
 
 async def handle_personal_account_button(message: types.Message, bot: AsyncTeleBot):
     """Обработчик нажатия на кнопку 'Личный кабинет'."""
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+        return
+
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
-
-    # --- ПРОВЕРКА СЕССИИ ---
-    if user_id not in user_session_keys:
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
-        return
-    
-    fernet_instance = user_session_keys.get(user_id)
-    # --- КОНЕЦ ПРОВЕРКИ ---
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
 
     await tg_helpers.send_typing_action(bot, user_id)
     
@@ -230,14 +203,12 @@ async def handle_personal_account_button(message: types.Message, bot: AsyncTeleB
 
 async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /usage для отображения статистики расходов."""
-    user_id = message.from_user.id
-    lang_code = await db_manager.get_user_language(user_id)
-
-    if user_id not in user_session_keys:
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
         
-    fernet_instance = user_session_keys.get(user_id)
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
 
     api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
     if not api_key:
@@ -302,6 +273,9 @@ async def handle_usage(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_full_guide(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /help_guide, отправляет полную справку."""
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+        return
+
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     await tg_helpers.send_typing_action(bot, user_id)
@@ -311,6 +285,9 @@ async def handle_full_guide(message: types.Message, bot: AsyncTeleBot):
 
 async def handle_api_key_info(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /apikey_info, отправляет секцию про API ключ."""
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+        return
+        
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     await tg_helpers.send_typing_action(bot, user_id)

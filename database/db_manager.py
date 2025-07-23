@@ -18,7 +18,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from logger_config import get_logger
 from config.settings import DATABASE_NAME, DEFAULT_MODEL_ID
 from utils import crypto_helpers
-from handlers import telegram_helpers as tg_helpers
+# from handlers import telegram_helpers as tg_helpers
 
 db_logger = get_logger('database', user_id='System')
 db_lock = asyncio.Lock()  # Используем asyncio.Lock для write-операций
@@ -231,31 +231,36 @@ async def setup_database():
 
 # --- Управление пользователями и паролями (ZK) ---
 
-async def add_or_update_user(user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]):
-    """Добавляет нового пользователя или обновляет его данные. Создает диалог по умолчанию."""
-    user_data = await _execute_query("SELECT user_id, active_dialog_id FROM users WHERE user_id = ?", (user_id,), fetch_one=True)
+async def add_or_update_user(user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]) -> bool:
+    """Добавляет нового пользователя или обновляет его данные. Создает диалог по умолчанию.
 
+    Args:
+        user_id: ID пользователя.
+        username: Юзернейм пользователя.
+        first_name: Имя пользователя.
+        last_name: Фамилия пользователя.
+
+    Returns:
+        bool: True, если пользователь был новым, иначе False.
+    """
+    user_data = await _execute_query("SELECT user_id, active_dialog_id FROM users WHERE user_id = ?", (user_id,), fetch_one=True)
+    is_new_user = False
     if not user_data:
+        is_new_user = True
         db_logger.info(f"Добавляем нового пользователя {user_id} (@{username}).")
         today_date_str = datetime.date.today().strftime('%Y-%m-%d')
         query = "INSERT INTO users (user_id, username, first_name, last_name, first_interaction_date) VALUES (?, ?, ?, ?, ?)"
         params = (user_id, username, first_name, last_name, today_date_str)
         await _execute_query(query, params, is_write_operation=True)
-        
-        # --- ВОЗВРАЩЕННАЯ ЛОГИКА ---
         await create_dialog(user_id, "Основной диалог", set_active=True)
-        # --- КОНЕЦ ВОЗВРАЩЕННОЙ ЛОГИКИ ---
-
-        await tg_helpers.notify_admin_of_new_user(user_id, username, first_name, last_name)
     else:
         query = "UPDATE users SET username = ?, first_name = ?, last_name = ? WHERE user_id = ?"
         params = (username, first_name, last_name, user_id)
         await _execute_query(query, params, is_write_operation=True)
-        
-        # --- ВОЗВРАЩЕННАЯ ЛОГИКА (для старых пользователей, у которых мог не быть диалога) ---
         if not user_data['active_dialog_id']:
             db_logger.warning(f"У существующего пользователя {user_id} нет активного диалога. Создаем новый.")
             await create_dialog(user_id, "Основной диалог", set_active=True)
+    return is_new_user
 
 async def is_master_password_set(user_id: int) -> bool:
     """Проверяет, установил ли пользователь мастер-пароль."""

@@ -31,7 +31,6 @@ from features import profile_manager
 from features.profile_manager import QUESTIONNAIRE, ask_question
 from .decorators import admin_required
 from .admin_handlers import handle_admin_command
-from .command_handlers import user_session_keys # <-- Импорт сессионного кэша
 
 from logger_config import get_logger
 
@@ -123,7 +122,7 @@ async def _handle_state_password_confirm(message: types.Message, bot: AsyncTeleB
         salt = await db_manager.get_user_salt(user_id)
         if salt:
             fernet_instance = crypto_helpers.get_fernet_instance(password_one, salt)
-            user_session_keys[user_id] = fernet_instance
+            tg_helpers.user_session_keys[user_id] = fernet_instance
             logger.info(f"Сессия для нового пользователя {user_id} создана и разблокирована после установки пароля.")
         else:
             logger.error(f"Критическая ошибка: не удалось получить соль для user_id {user_id} сразу после установки пароля.")
@@ -149,7 +148,7 @@ async def _handle_state_password_unlock(message: types.Message, bot: AsyncTeleBo
     if await db_manager.verify_master_password(user_id, password):
         salt = await db_manager.get_user_salt(user_id)
         fernet_instance = crypto_helpers.get_fernet_instance(password, salt)
-        user_session_keys[user_id] = fernet_instance
+        tg_helpers.user_session_keys[user_id] = fernet_instance
         await bot.delete_state(user_id, message.chat.id)
         main_keyboard = mk.create_main_keyboard(lang_code, user_id)
         await bot.send_message(user_id, loc.get_text('zk_unlock_success', lang_code), reply_markup=main_keyboard)
@@ -181,7 +180,7 @@ async def _handle_state_profile_answer(message: types.Message, bot: AsyncTeleBot
         else:
             # Анкета завершена
             lang_code = await db_manager.get_user_language(user_id)
-            fernet_instance = user_session_keys.get(user_id)
+            fernet_instance = tg_helpers.user_session_keys.get(user_id)
             if fernet_instance:
                 await db_manager.save_user_profile(user_id, current_profile, fernet_instance)
             else:
@@ -265,7 +264,7 @@ async def _handle_state_api_key(message: types.Message, bot: AsyncTeleBot):
     api_key_plain = message.text.strip()
     lang_code = await db_manager.get_user_language(user_id)
     
-    fernet_instance = user_session_keys.get(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if not fernet_instance:
         await bot.reply_to(message, "Критическая ошибка: сессия не найдена для шифрования ключа.")
         return
@@ -290,7 +289,7 @@ async def _handle_state_translate(message: types.Message, bot: AsyncTeleBot):
     text_to_translate = message.text
     lang_code = await db_manager.get_user_language(user_id)
     
-    fernet_instance = user_session_keys.get(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if not fernet_instance:
         await bot.reply_to(message, "Критическая ошибка: сессия не найдена.")
         return
@@ -380,14 +379,14 @@ async def _handle_state_feedback(message: types.Message, bot: AsyncTeleBot):
 
 async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
     """Обрабатывает сообщения, когда пользователь не в состоянии, с проверкой ZK-сессии."""
+    # --- ШАГ 1: ПРОВЕРКА АКТИВНОЙ СЕССИИ (ИСПРАВЛЕНА) ---
+    # Вызываем централизованную функцию, которая сама обработает блокировку
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+        return
+        
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
-    
-    # --- ШАГ 1: ПРОВЕРКА АКТИВНОЙ СЕССИИ ---
-    if user_id not in user_session_keys:
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
-        return
-    fernet_instance = user_session_keys.get(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
     
     content_type = message.content_type
     
@@ -421,7 +420,6 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
             return
         
         # --- ШАГ 4: ВЫЗОВ GEMINI С ПЕРЕДАЧЕЙ КЛЮЧА СЕССИИ ---
-        # TODO: Изменить gemini_service.generate_response, чтобы она принимала fernet_instance
         response_text, sources = await gemini_service.generate_response(user_id, prompt, api_key, fernet_instance)
         
         # --- ШАГ 5: ОТПРАВКА ОТВЕТА (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
@@ -462,8 +460,13 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
     user_id = user.id
 
     user_logger.info(f"Получено сообщение ({message.content_type}) от user ID: {user_id}", extra={'user_id': str(user_id)})
-    await db_manager.add_or_update_user(user.id, user.username, user.first_name, user.last_name)
     
+    # Теперь функция возвращает флаг, был ли пользователь новым
+    is_new = await db_manager.add_or_update_user(user_id, user.username, user.first_name, user.last_name)
+    if is_new:
+        # Уведомляем админа отсюда, а не из db_manager
+        await tg_helpers.notify_admin_of_new_user(user_id, user.username, user.first_name, user.last_name)
+
     lang_code = await db_manager.get_user_language(user_id)
     if not await _check_access(bot, user_id, lang_code):
         return

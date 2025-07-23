@@ -17,7 +17,7 @@ from config.settings import (
     CALLBACK_DIALOG_DELETE_PREFIX, CALLBACK_DIALOG_CREATE, CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX,
     STATE_WAITING_FOR_NEW_DIALOG_NAME, STATE_WAITING_FOR_RENAME_DIALOG
 )
-from .command_handlers import user_session_keys
+# from .command_handlers import user_session_keys
 from features import profile_manager # Импортируем сам модуль
 from features.profile_manager import QUESTIONNAIRE, ask_question # Импортируем компоненты
 from database import db_manager
@@ -46,8 +46,11 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
         await tg_helpers.answer_callback_query(bot, call)
         return
 
-    # Обновляем данные пользователя при каждом колбэке
-    await db_manager.add_or_update_user(user.id, user.username, user.first_name, user.last_name)
+    # Обновляем данные пользователя и проверяем, новый ли он
+    is_new = await db_manager.add_or_update_user(user_id, user.username, user.first_name, user.last_name)
+    if is_new:
+        await tg_helpers.notify_admin_of_new_user(user_id, user.username, user.first_name, user.last_name)
+
     lang_code = await db_manager.get_user_language(user_id)
 
     # --- НОВАЯ ПРОВЕРКА СЕССИИ ДЛЯ ЗАЩИЩЕННЫХ ДЕЙСТВИЙ ---
@@ -61,8 +64,19 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
     # Проверяем, начинается ли колбэк с одного из защищенных префиксов
     is_protected = any(data.startswith(prefix) for prefix in protected_callbacks)
 
-    if is_protected and user_id not in user_session_keys:
-        await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('zk_user_is_locked', lang_code), show_alert=True)
+    # Создаем фиктивный объект Message для передачи в функцию проверки
+    fake_message = types.Message(
+        message_id=call.message.message_id,
+        from_user=call.from_user,
+        date=call.message.date,
+        chat=call.message.chat,
+        content_type='text',
+        options={},
+        json_string=""
+    )
+    if is_protected and not await tg_helpers.check_session_and_prompt_for_unlock(bot, fake_message):
+        # Отвечаем на callback, чтобы убрать "часики"
+        await tg_helpers.answer_callback_query(bot, call)
         return
     # --- КОНЕЦ ПРОВЕРКИ ---
 
@@ -186,7 +200,7 @@ async def handle_profile_choice(bot: AsyncTeleBot, call: types.CallbackQuery, la
         else:
             # Анкета завершена
             lang_code = await db_manager.get_user_language(user_id)
-            fernet_instance = user_session_keys.get(user_id)
+            fernet_instance = tg_helpers.user_session_keys.get(user_id)
             if fernet_instance:
                 await db_manager.save_user_profile(user_id, current_profile, fernet_instance)
             else:
@@ -365,7 +379,7 @@ async def handle_choose_model_menu(bot: AsyncTeleBot, call: types.CallbackQuery,
     user_id = call.from_user.id
     
     # Получаем ключ сессии, проверка на его наличие уже была в роутере
-    fernet_instance = user_session_keys.get(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if not fernet_instance:
         # Дополнительная проверка на всякий случай
         await tg_helpers.answer_callback_query(bot, call, text="Ошибка: Сессия не найдена.", show_alert=True)
@@ -434,7 +448,7 @@ async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.Callback
     user_id = call.from_user.id
     
     # --- НОВАЯ ПРОВЕРКА СЕССИИ ---
-    fernet_instance = user_session_keys.get(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if not fernet_instance:
         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('zk_user_is_locked', lang_code), show_alert=True)
         return

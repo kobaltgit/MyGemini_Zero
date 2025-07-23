@@ -6,7 +6,7 @@
 """
 import asyncio
 import re
-from typing import Optional
+from typing import Dict, Optional
 
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
@@ -15,12 +15,14 @@ from telebot import apihelper
 from langchain.text_splitter import MarkdownTextSplitter
 import telegramify_markdown
 
+from config import settings
 from config.settings import ADMIN_USER_ID
 from logger_config import get_logger
 from utils import text_helpers as th
 from utils import markup_helpers as mk
 from utils import localization as loc
 from database import db_manager
+from cryptography.fernet import Fernet
 
 logger = get_logger(__name__)
 
@@ -331,3 +333,34 @@ async def notify_admin_of_new_user(user_id: int, username: Optional[str], first_
 
     except Exception as e:
         logger.error(f"Не удалось отправить уведомление администратору о новом пользователе {user_id}: {e}", extra={'user_id': 'System'})
+
+# =============================================================================
+# --- НОВЫЙ БЛОК: Централизованное управление сессиями (ZK) ---
+# =============================================================================
+
+# Сессионный кэш для хранения экземпляров Fernet (ключей шифрования).
+# Ключ - user_id, значение - экземпляр Fernet.
+user_session_keys: Dict[int, Fernet] = {}
+
+
+async def check_session_and_prompt_for_unlock(bot: AsyncTeleBot, message: types.Message) -> bool:
+    """Проверяет, активна ли сессия. Если нет, переводит бота в состояние ожидания пароля.
+    
+    Эта функция является единой точкой проверки сессии для всех обработчиков.
+
+    Args:
+        bot: Экземпляр AsyncTeleBot.
+        message: Объект сообщения Telegram.
+
+    Returns:
+        bool: True, если сессия активна, False - если заблокирована.
+    """
+    user_id = message.from_user.id
+    if user_id not in user_session_keys:
+        lang_code = await db_manager.get_user_language(user_id)
+        # Устанавливаем состояние, чтобы бот ждал пароль
+        await bot.set_state(user_id, settings.STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK, message.chat.id)
+        # Отправляем сообщение с просьбой ввести пароль
+        await bot.reply_to(message, loc.get_text('zk_unlock_prompt', lang_code), reply_markup=types.ReplyKeyboardRemove())
+        return False
+    return True
