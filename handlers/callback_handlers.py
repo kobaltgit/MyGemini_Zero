@@ -39,6 +39,7 @@ from features.profile_manager import QUESTIONNAIRE, ask_question # Импорт�
 from database import db_manager
 from services import gemini_service
 from services.gemini_service import GeminiAPIError
+from services.vector_store_manager import VectorStoreManager
 from utils import markup_helpers as mk
 from utils import localization as loc
 from utils import text_helpers as th
@@ -308,6 +309,21 @@ async def handle_delete_dialog_confirm(bot: AsyncTeleBot, call: types.CallbackQu
     user_id = call.from_user.id
     dialog_id_to_delete = int(call.data[len(CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX):])
 
+    # --- НАЧАЛО ИНТЕГРАЦИИ VECTOR STORE ---
+    # Для инициализации менеджера нам нужна сессия, чтобы получить API-ключ
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
+    if fernet_instance:
+        api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
+        if api_key:
+            try:
+                # Инициализируем менеджер и удаляем память диалога
+                vector_store = VectorStoreManager(api_key=api_key)
+                vector_store.delete_dialog_memory(dialog_id_to_delete)
+            except Exception as e:
+                # Логируем ошибку, но не останавливаем процесс удаления из основной БД
+                logger.error(f"Не удалось удалить память диалога {dialog_id_to_delete} из векторного хранилища: {e}", extra={'user_id': str(user_id)})
+    # --- КОНЕЦ ИНТЕГРАЦИИ VECTOR STORE ---
+
     deleted_dialog_name = await db_manager.delete_dialog(user_id, dialog_id_to_delete)
     if not deleted_dialog_name:
         await tg_helpers.answer_callback_query(bot, call, text="Ошибка при удалении диалога.", show_alert=True)
@@ -317,6 +333,8 @@ async def handle_delete_dialog_confirm(bot: AsyncTeleBot, call: types.CallbackQu
     if not remaining_dialogs:
         new_dialog_name = "Основной диалог" if lang_code == 'ru' else "General Chat"
         await db_manager.create_dialog(user_id, new_dialog_name, set_active=True)
+        # При удалении последнего диалога память для него уже удалена, но нужно создать память для нового
+        # Однако, мы не будем этого делать здесь, память будет создана при первом сообщении.
         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_deleted_last_success', lang_code).format(name=deleted_dialog_name))
     else:
          await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_deleted_success', lang_code).format(name=deleted_dialog_name))

@@ -68,3 +68,6 @@ Thumbs.db
 # --- Temporary Files ---
 # Если будете создавать скрипты для разовых задач
 generate_key.py
+
+# --- Vector DB ---
+vector_store/

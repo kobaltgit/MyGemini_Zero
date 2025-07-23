@@ -30,6 +30,7 @@ import time
 from typing import List, Optional
 
 import chromadb
+from chromadb.config import Settings # <-- НОВЫЙ ИМПОРТ
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
@@ -62,8 +63,12 @@ class VectorStoreManager:
         if not api_key:
             raise ValueError("API-ключ Google необходим для инициализации модели эмбеддингов.")
 
+        # --- ИЗМЕНЕНИЕ 1: Отключаем телеметрию ---
         # 1. Инициализируем клиент ChromaDB для постоянного хранения
-        self.client = chromadb.PersistentClient(path=VECTOR_STORE_PATH)
+        self.client = chromadb.PersistentClient(
+            path=VECTOR_STORE_PATH,
+            settings=Settings(anonymized_telemetry=False) # <-- ДОБАВЛЕНА ЭТА СТРОКА
+        )
 
         # 2. Инициализируем модель для создания эмбеддингов
         self.embedding_model = GoogleGenerativeAIEmbeddings(
@@ -182,7 +187,8 @@ class VectorStoreManager:
         try:
             self.client.delete_collection(name=collection_name)
             logger.info(f"Память (коллекция '{collection_name}') для диалога {dialog_id} успешно удалена.")
-        except ValueError:
-            logger.warning(f"Попытка удаления несуществующей памяти (коллекции '{collection_name}') для диалога {dialog_id}.")
+        # --- ИЗМЕНЕНИЕ 2: Улучшаем обработку ошибки ---
+        except (ValueError, chromadb.errors.NotFoundError):
+            logger.warning(f"Попытка удаления несуществующей памяти (коллекции '{collection_name}') для диалога {dialog_id}. Это нормальная ситуация.")
         except Exception as e:
             logger.exception(f"Ошибка при удалении памяти для диалога {dialog_id}: {e}")
