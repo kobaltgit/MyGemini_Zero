@@ -68,6 +68,23 @@ Imagine your data is a treasure in a safe.
 
 > **Transparency is our principle.** We protect your data from us (the intermediary). But the final request (your prompt + context from memory) is sent to Google Gemini in unencrypted form. Our service is for those who trust Google but do not want to trust third-party developers.
 
+#### Clarification: What about long-term memory (vector database)?
+
+This is an important technical nuance that we are explaining for full transparency. For its operation, long-term memory must store text fragments (chunks) in an **unencrypted form**.
+
+**Why?**
+
+Imagine memory as a library catalog. For you to quickly find information not only by general meaning (semantic search) but also by **exact keyword** (e.g., to find all mentions of "Project Quantum"), the system must "see" the text of these fragments.
+
+If we were to encrypt them, keyword search would cease to function. This is a conscious compromise made to preserve important functionality.
+
+However, the **context remains protected**:
+1.  **Isolation:** The memory for each of your dialogues is stored in a separate, isolated "collection," inaccessible to other dialogues or users.
+2.  **Communication Security:** All other information — your API key, the full dialogue history in the main database, your profile — is securely encrypted with your master password.
+3.  **No Direct Link:** The vector database contains no direct information about which user owns a particular fragment.
+
+We chose this approach to provide you with a powerful search tool while maintaining the core principle: **no one but you holds the key to your complete "digital vault"**.
+
 ---
 
 ## 🚀 Key Features
