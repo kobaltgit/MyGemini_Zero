@@ -153,6 +153,7 @@ async def _handle_state_password_confirm(message: types.Message, bot: AsyncTeleB
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     password_two = message.text.strip()
+    await tg_helpers.delete_message_safe(bot, message.chat.id, message.message_id)
 
     async with bot.retrieve_data(user_id, message.chat.id) as data:
         password_one = data.get('password_one')
@@ -192,6 +193,7 @@ async def _handle_state_password_unlock(message: types.Message, bot: AsyncTeleBo
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     password = message.text.strip()
+    await tg_helpers.delete_message_safe(bot, message.chat.id, message.message_id)
     
     pending_callback_data = None
     async with bot.retrieve_data(user_id, message.chat.id) as data:
@@ -245,6 +247,7 @@ async def _handle_state_panic_password_setup(message: types.Message, bot: AsyncT
     """
     user_id = message.from_user.id
     password = message.text.strip()
+    await tg_helpers.delete_message_safe(bot, message.chat.id, message.message_id)
     lang_code = await db_manager.get_user_language(user_id)
 
     is_master_match = await db_manager.verify_master_password(user_id, password)
@@ -268,6 +271,7 @@ async def _handle_state_panic_password_confirm(message: types.Message, bot: Asyn
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     password_two = message.text.strip()
+    await tg_helpers.delete_message_safe(bot, message.chat.id, message.message_id)
 
     async with bot.retrieve_data(user_id, message.chat.id) as data:
         password_one = data.get('panic_password_one')
@@ -437,9 +441,7 @@ async def _handle_state_api_key(message: types.Message, bot: AsyncTeleBot):
         await bot.reply_to(message, "Критическая ошибка: сессия не найдена для шифрования ключа.")
         return
         
-    try:
-        await bot.delete_message(message.chat.id, message.message_id)
-    except Exception: pass
+    await tg_helpers.delete_message_safe(bot, message.chat.id, message.message_id) # <-- ИЗМЕНЕНО
     
     status_msg = await bot.send_message(user_id, loc.get_text('api_key_verifying', lang_code))
     is_valid = await gemini_service.validate_api_key(api_key_plain)

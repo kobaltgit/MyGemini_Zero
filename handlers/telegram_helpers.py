@@ -286,6 +286,19 @@ async def edit_message_reply_markup_safe(bot: AsyncTeleBot, chat_id: int, messag
     except apihelper.ApiException as e:
         logger.debug(f"Не удалось отредактировать клавиатуру у сообщения {message_id}: {e}", extra={'user_id': str(chat_id)})
 
+async def delete_message_safe(bot: AsyncTeleBot, chat_id: int, message_id: int):
+    """
+    Безопасно удаляет сообщение, игнорируя ошибки, если сообщение не найдено.
+
+    Args:
+        bot: Экземпляр AsyncTeleBot.
+        chat_id: ID чата, где находится сообщение.
+        message_id: ID сообщения для удаления.
+    """
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except apihelper.ApiException as e:
+        logger.debug(f"Не удалось удалить сообщение {message_id}: {e}", extra={'user_id': str(chat_id)})
 
 # --- ОБЩАЯ ФУНКЦИЯ ДЛЯ АДМИНКИ ---
 

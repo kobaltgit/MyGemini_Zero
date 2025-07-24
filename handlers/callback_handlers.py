@@ -191,13 +191,15 @@ async def handle_panic_password_setup(bot: AsyncTeleBot, call: types.CallbackQue
 
 
 async def handle_data_management_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Отображает меню управления данными."""
+    """Отображает меню управления данными, удаляя предыдущее сообщение."""
+    # Удаляем сообщение с главным меню настроек
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+    await tg_helpers.answer_callback_query(bot, call)
+
+    # Отправляем новое сообщение с меню управления данными
     text = loc.get_text('data_management_title', lang_code)
     markup = mk.create_data_management_keyboard(lang_code)
-    await tg_helpers.edit_message_text_safe(
-        bot, call.message.chat.id, call.message.message_id, text, reply_markup=markup
-    )
-    await tg_helpers.answer_callback_query(bot, call)
+    await bot.send_message(call.from_user.id, text, reply_markup=markup)
 
 
 async def handle_archive_memory_start(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
@@ -381,9 +383,12 @@ async def handle_delete_dialog_start(bot: AsyncTeleBot, call: types.CallbackQuer
     await tg_helpers.answer_callback_query(bot, call)
 
 async def handle_delete_dialog_confirm(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Окончательно удаляет диалог."""
+    """Окончательно удаляет диалог, удаляет сообщение подтверждения и отправляет новое меню."""
     user_id = call.from_user.id
     dialog_id_to_delete = int(call.data[len(CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX):])
+
+    # Сначала удаляем сообщение с кнопками "Да/Нет"
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
 
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if fernet_instance:
@@ -401,14 +406,18 @@ async def handle_delete_dialog_confirm(bot: AsyncTeleBot, call: types.CallbackQu
         return
 
     remaining_dialogs = await db_manager.get_user_dialogs(user_id)
+    alert_text = loc.get_text('dialog_deleted_success', lang_code).format(name=deleted_dialog_name)
     if not remaining_dialogs:
         new_dialog_name = "Основной диалог" if lang_code == 'ru' else "General Chat"
         await db_manager.create_dialog(user_id, new_dialog_name, set_active=True)
-        await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_deleted_last_success', lang_code).format(name=deleted_dialog_name))
-    else:
-         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_deleted_success', lang_code).format(name=deleted_dialog_name))
+        alert_text = loc.get_text('dialog_deleted_last_success', lang_code).format(name=deleted_dialog_name)
+    
+    await tg_helpers.answer_callback_query(bot, call, text=alert_text)
 
-    await handle_dialogs_menu(bot, call, lang_code)
+    # Отправляем новое, обновленное меню диалогов
+    dialogs_text = f"{loc.get_text('dialogs_menu_title', lang_code)}\n\n{loc.get_text('dialogs_menu_desc', lang_code)}"
+    dialogs_keyboard = await mk.create_dialogs_menu_keyboard(user_id)
+    await bot.send_message(user_id, dialogs_text, reply_markup=dialogs_keyboard)
 
 
 async def handle_back_to_main_settings(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
@@ -425,13 +434,14 @@ async def handle_back_to_main_settings(bot: AsyncTeleBot, call: types.CallbackQu
     await tg_helpers.answer_callback_query(bot, call)
 
 async def handle_set_api_key_from_settings(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Начинает процесс установки API ключа из меню настроек."""
-    await bot.set_state(call.from_user.id, STATE_WAITING_FOR_API_KEY, call.message.chat.id)
+    """Начинает процесс установки API ключа, удаляя меню настроек."""
+    # Удаляем сообщение с главным меню настроек
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
     await tg_helpers.answer_callback_query(bot, call)
-    await tg_helpers.edit_message_text_safe(
-        bot, chat_id=call.message.chat.id, message_id=call.message.message_id,
-        text=loc.get_text('set_api_key_prompt', lang_code), reply_markup=None
-    )
+
+    # Отправляем новое сообщение с запросом ключа
+    await bot.set_state(call.from_user.id, STATE_WAITING_FOR_API_KEY, call.message.chat.id)
+    await bot.send_message(call.from_user.id, loc.get_text('set_api_key_prompt', lang_code), reply_markup=None)
 
 async def handle_language_setting(bot: AsyncTeleBot, call: types.CallbackQuery):
     """Обрабатывает смену языка интерфейса."""
@@ -442,7 +452,7 @@ async def handle_language_setting(bot: AsyncTeleBot, call: types.CallbackQuery):
     await tg_helpers.answer_callback_query(bot, call, text=f"Language set to {'English' if new_lang_code == 'en' else 'Русский'}")
 
 async def handle_style_setting(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Обрабатывает смену стиля общения бота."""
+    """Обрабатывает смену стиля общения бота и удаляет сообщение с настройками."""
     user_id = call.from_user.id
     style_code = call.data[len(CALLBACK_SETTINGS_STYLE_PREFIX):]
     if style_code in BOT_STYLES:
@@ -450,27 +460,33 @@ async def handle_style_setting(bot: AsyncTeleBot, call: types.CallbackQuery, lan
         active_dialog_id = await db_manager.get_active_dialog_id(user_id)
         if active_dialog_id:
             gemini_service.reset_dialog_chat(active_dialog_id)
-        await handle_back_to_main_settings(bot, call, lang_code)
-        await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('style_changed_notice', lang_code))
+        
+        # Удаляем сообщение с кнопками настроек
+        await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+        # Уведомляем пользователя через всплывающее сообщение
+        await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('style_changed_notice', lang_code), show_alert=True)
 
 async def handle_persona_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Открывает меню выбора персоны."""
+    """Открывает меню выбора персоны, удаляя предыдущее сообщение."""
+    # Удаляем сообщение с главным меню настроек
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+    await tg_helpers.answer_callback_query(bot, call)
+
+    # Отправляем новое сообщение с меню выбора персоны
     user_id = call.from_user.id
     text = (f"{loc.get_text('persona_selection_title', lang_code)}\n\n"
             f"{loc.get_text('persona_selection_desc', lang_code)}")
     persona_keyboard = await mk.create_persona_selection_keyboard(user_id)
-    await tg_helpers.edit_message_text_safe(
-        bot, call.message.chat.id, call.message.message_id,
-        text=text, reply_markup=persona_keyboard
-    )
-    await tg_helpers.answer_callback_query(bot, call)
+    await bot.send_message(user_id, text, reply_markup=persona_keyboard)
 
 async def handle_persona_selection(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Обрабатывает выбор персоны."""
+    """Обрабатывает выбор персоны и удаляет сообщение с меню."""
     user_id = call.from_user.id
     persona_id = call.data[len(CALLBACK_SETTINGS_PERSONA_PREFIX):]
+    
     if persona_id in BOT_PERSONAS:
         await db_manager.set_user_persona(user_id, persona_id)
+        
         active_dialog_id = await db_manager.get_active_dialog_id(user_id)
         if active_dialog_id:
             gemini_service.reset_dialog_chat(active_dialog_id)
@@ -478,13 +494,17 @@ async def handle_persona_selection(bot: AsyncTeleBot, call: types.CallbackQuery,
         persona_info = BOT_PERSONAS[persona_id]
         persona_name = persona_info.get(f"name_{lang_code}", persona_info['name_ru'])
 
-        await handle_back_to_main_settings(bot, call, lang_code)
+        # Удаляем сообщение с меню выбора персоны
+        await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+        
+        # Уведомляем пользователя через всплывающее сообщение
         await tg_helpers.answer_callback_query(
-            bot, call, text=loc.get_text('persona_changed_notice', lang_code).format(persona_name=persona_name)
+            bot, call, text=loc.get_text('persona_changed_notice', lang_code).format(persona_name=persona_name),
+            show_alert=True
         )
 
 async def handle_choose_model_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Открывает меню выбора модели Gemini."""
+    """Открывает меню выбора модели Gemini, удаляя меню настроек."""
     user_id = call.from_user.id
     
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
@@ -497,46 +517,49 @@ async def handle_choose_model_menu(bot: AsyncTeleBot, call: types.CallbackQuery,
         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('api_key_needed_for_feature', lang_code), show_alert=True)
         return
 
-    await tg_helpers.edit_message_text_safe(
-        bot, call.message.chat.id, call.message.message_id,
-        text=loc.get_text('model_selection_loading', lang_code), reply_markup=None
-    )
+    # Удаляем сообщение с главным меню настроек
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+    await tg_helpers.answer_callback_query(bot, call)
+    
+    # Отправляем новое сообщение о статусе
+    status_msg = await bot.send_message(user_id, loc.get_text('model_selection_loading', lang_code))
     
     try:
         models = await gemini_service.get_available_models(api_key)
         if not models:
-            await tg_helpers.edit_message_text_safe(
-                bot, call.message.chat.id, call.message.message_id,
-                text=loc.get_text('model_selection_error', lang_code)
-            )
-            settings_keyboard = await mk.create_settings_keyboard(user_id)
-            await tg_helpers.edit_message_text_safe(
-                bot, call.message.chat.id, call.message.message_id,
-                text=loc.get_text('settings_title', lang_code), reply_markup=settings_keyboard
-            )
+            error_text = loc.get_text('model_selection_error', lang_code)
+            await tg_helpers.edit_message_text_safe(bot, status_msg.chat.id, status_msg.message_id, text=error_text)
             return
             
         current_model = await db_manager.get_user_gemini_model(user_id)
         keyboard = mk.create_model_selection_keyboard(models, current_model, lang_code)
+        # Редактируем сообщение о статусе, показывая меню выбора модели
         await tg_helpers.edit_message_text_safe(
-            bot, call.message.chat.id, call.message.message_id,
+            bot, status_msg.chat.id, status_msg.message_id,
             text=loc.get_text('model_selection_title', lang_code), reply_markup=keyboard
         )
     except GeminiAPIError as e:
         user_friendly_error = loc.get_text(e.error_key, lang_code)
-        await tg_helpers.answer_callback_query(bot, call, text=user_friendly_error, show_alert=True)
+        await tg_helpers.edit_message_text_safe(bot, status_msg.chat.id, status_msg.message_id, text=user_friendly_error)
 
 async def handle_model_selection(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Обрабатывает выбор модели Gemini."""
+    """Обрабатывает выбор модели Gemini и удаляет сообщение с меню."""
     user_id = call.from_user.id
     model_name = call.data[len(CALLBACK_SETTINGS_MODEL_PREFIX):]
+    
     await db_manager.set_user_gemini_model(user_id, model_name)
+    
     active_dialog_id = await db_manager.get_active_dialog_id(user_id)
     if active_dialog_id:
         gemini_service.reset_dialog_chat(active_dialog_id)
-    await handle_back_to_main_settings(bot, call, lang_code)
+    
+    # Удаляем сообщение с меню выбора модели
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+    
+    # Уведомляем пользователя через всплывающее сообщение
     await tg_helpers.answer_callback_query(
-        bot, call, text=loc.get_text('model_changed_notice', lang_code).format(model_name=model_name)
+        bot, call, text=loc.get_text('model_changed_notice', lang_code).format(model_name=model_name),
+        show_alert=True
     )
 
 async def handle_language_selection_for_translation(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
@@ -564,10 +587,11 @@ async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.Callback
     selected_date_str = call.data[len(CALLBACK_CALENDAR_DATE_PREFIX):]
     
     await tg_helpers.answer_callback_query(bot, call)
-    await tg_helpers.edit_message_text_safe(
-        bot, call.message.chat.id, call.message.message_id,
-        loc.get_text('history_loading', lang_code), reply_markup=None
-    )
+    
+    # Удаляем сообщение с календарем
+    await tg_helpers.delete_message_safe(bot, call.message.chat.id, call.message.message_id)
+    # Отправляем новое сообщение о статусе
+    await bot.send_message(user_id, loc.get_text('history_loading', lang_code))
     
     try:
         selected_date = datetime.datetime.strptime(selected_date_str, '%Y-%m-%d').date()
