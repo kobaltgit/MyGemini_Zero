@@ -1,3 +1,9 @@
+# 📖 Full Guide to the MyGemini Zero Bot
+
+Welcome! This guide will help you master all the features of your personal AI assistant.
+
+---
+
 # [START OF SECTION: API_KEY]
 
 ### 🔑 How to Get and Set a Google API Key
@@ -38,33 +44,64 @@ The bot will verify the key, and if everything is correct, you can start chattin
 
 ---
 
+# [START OF SECTION: SECURITY]
+
+### 🔐 Security: Zero-Knowledge
+
+This bot is built on the principle of maximum privacy. This means that **no one but you can access your data**.
+
+#### Master Password
+
+On your first start, you create a **master password**. This is the only key to your "digital vault."
+
+*   **We do not store your password.** The database only stores its encrypted "fingerprint" (hash), from which the password itself cannot be recovered.
+*   **The encryption key is created on-the-fly.** Each time you enter your password to unlock a session, a temporary key is generated from it. It only exists in RAM and disappears after the session ends.
+*   **❗️ IMPORTANT:** If you forget your master password, it will be **impossible** to recover your data. Please write it down and keep it in a safe place.
+
+#### Panic Password
+
+For emergency situations, you can set an optional **panic password**.
+
+*   **What does it do?** If you enter it instead of your main password, the bot will pretend to unlock the session successfully. In reality, it will **immediately and irreversibly delete all your message history and long-term memory content**.
+*   **Why is this useful?** This is a "plausible deniability" feature that provides an extra layer of protection in critical situations where you might need to prove that you have no saved data.
+
+# [END OF SECTION: SECURITY]
+
+---
+
 # [START OF SECTION: FEATURES]
 
-### 🚀 Bot Features
+### 🚀 Core Features
 
-After setting up the API key, you gain access to the following features:
+#### 🧠 Communication & Memory
 
-#### 🧠 Main Chat
-Simply type your questions or tasks in the chat. The bot maintains the context of the conversation within the active dialog.
-
-#### 🖼️ Image Analysis
-Send an image to the bot (as a photo, not a file). You can add a caption to the image to specify your request, for example: "What breed is this dog?" or "Create a recipe from these ingredients."
+*   **Main Chat:** Simply type your questions or tasks in the chat. The bot maintains the context of the conversation within the active dialog.
+*   **Image Analysis:** Send an image to the bot (as a photo, not a file). You can add a caption to the image to specify your request, for example: "What breed is this dog?" or "Create a recipe from these ingredients."
+*   **Long-Term Memory & Files (`/memorize`):** The bot not only remembers recent messages but can also store large amounts of information. Using the `/memorize` command, you can upload a `.txt` or `.md` file. Its content will be added to the memory of the **current dialog**, and the bot will be able to use this information in subsequent responses.
 
 #### 🗂️ Dialog Management (`/dialogs`)
+
 The bot allows you to have multiple independent conversations at the same time. This is useful for keeping the contexts of different tasks (e.g., "Work" and "Travel") separate.
 *   **Create:** Click "➕ Create New" to start a new conversation from scratch.
 *   **Switch:** Simply click on a dialog's name in the list to make it active. Its context will be loaded immediately.
 *   **Rename:** Each dialog has an "✏️" button that lets you give it a new, more descriptive name.
 *   **Delete:** Click "❌" next to an inactive dialog to delete it along with its entire history. **The active dialog cannot be deleted.**
 
-#### 📜 Message History (`/history`)
-You can view the entire conversation with the bot in the current active dialog for any selected date.
+#### 📄 Data Management
 
-#### 📊 Usage Statistics (`/usage`)
-This command shows how many tokens have been used for generating responses today and for the current month, as well as an estimated cost in USD based on public Google tariffs.
+You have full control over your data. These options are available in the `Settings ➡️ Data Management` menu.
 
-#### 👤 My Account (`/account`)
-This section gathers all information about your profile: your "title" in the bot, the number of messages sent, current settings, and a brief analysis of the topics you most frequently discuss in the current dialog.
+*   **Memory Archiving (`/archive`):** Over time, your dialog history can become very large. This feature allows you to "compress" old messages. The bot will analyze them, create a concise summary, and replace dozens or hundreds of old entries with it. This frees up space and speeds up memory searches.
+*   **Complete Data Erasure:** If you want to start fresh, you can completely delete all message history and memory content across all dialogs. Your profile, passwords, and API key will be preserved. **This action is irreversible.**
+
+#### 👤 Profile & Personalization (`/profile`)
+
+During registration, the bot asks you to fill out a brief profile questionnaire (your role, goals, communication style, etc.). This information, like all your data, is securely encrypted. The bot uses it to tailor its responses to you. You can always view or change your profile using the `/profile` command.
+
+#### 📜 History & Statistics
+
+*   **Message History (`/history`):** You can view the entire conversation with the bot in the current active dialog for any selected date.
+*   **Usage Statistics (`/usage`):** This command shows how many tokens have been used for generating responses today and for the current month, as well as an estimated cost in USD based on public Google tariffs.
 
 # [END OF SECTION: FEATURES]
 
@@ -95,3 +132,31 @@ This setting only works if "Default Assistant" is selected as the "Persona." It 
 You can switch the language of all bot buttons and system messages between Russian and English. This does not affect the language in which you communicate with Gemini.
 
 # [END OF SECTION: SETTINGS]
+
+---
+
+# [START OF SECTION: COMMANDS]
+
+### 💬 Full Command List
+
+--- *Core* ---
+*   `/start` - Restart the bot / unlock session
+*   `/logout` - Lock the session (requires password)
+*   `/profile` - View and edit your profile
+*   `/usage` - Token usage statistics
+
+--- *Memory Management* ---
+*   `/dialogs` - Manage your dialogs (contexts)
+*   `/reset` - Clear the short-term dialog context
+*   `/history` - View message history
+*   `/memorize` - Memorize the content of a `.txt` or `.md` file
+*   `/archive` - Archive old memory in the current dialog
+
+--- *Settings & Help* ---
+*   `/settings` - Open the settings menu
+*   `/set_api_key` - Set or update your API key
+*   `/help` - Show a quick command reference
+*   `/help_guide` - 📖 Open this full guide
+*   `/apikey_info` - 🔑 How to create an API key
+
+# [END OF SECTION: COMMANDS]
