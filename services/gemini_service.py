@@ -348,8 +348,15 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
         first_candidate = response_json["candidates"][0]
         if first_candidate.get("finishReason") == "SAFETY":
              raise GeminiAPIError("Ответ заблокирован настройками безопасности.", details={"finish_reason": "SAFETY"})
-        response_text = "".join(part.get("text", "") for part in first_candidate["content"]["parts"]).strip()  
-        sources = []
+        response_text = ""
+        # Проверяем, есть ли 'parts' в ответе. Если нет, это, скорее всего, вызов инструмента.
+        if 'parts' in first_candidate.get("content", {}):
+            response_text = "".join(part.get("text", "") for part in first_candidate["content"]["parts"]).strip()
+        else:
+            # Если 'parts' нет, логируем это для отладки.
+            # В будущем здесь можно будет реализовать обработку tool_calls.
+            gemini_logger.info(f"Ответ кандидата не содержит 'parts', возможно, это tool_call. Ответ: {first_candidate.get('content')}", extra={'user_id': str(user_id)})  
+            sources = []
         metadata = first_candidate.get('groundingMetadata', {})
         if 'groundingAttributions' in metadata:
             for attr in metadata['groundingAttributions']:
