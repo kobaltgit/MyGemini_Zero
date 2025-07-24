@@ -173,14 +173,15 @@ async def _get_system_instruction_text(user_id: int, fernet_instance: Fernet) ->
     lang_code = await db_manager.get_user_language(user_id)
     system_prompt_parts = []
 
-    # --- Шаг 1: Добавляем мета-инструкцию ("паспорт") ---
     # Импортируем локализацию здесь, чтобы избежать циклических зависимостей
     from utils import localization as loc
+    
+    # --- Шаг 1: Мета-инструкция ("паспорт") ---
     meta_instruction = loc.get_text('bot_meta_instruction', lang_code)
     system_prompt_parts.append(meta_instruction)
     system_prompt_parts.append("---")
 
-    # --- Шаг 2: Загрузка и форматирование профиля пользователя ---
+    # --- Шаг 2: Профиль пользователя ---
     user_profile = await db_manager.get_user_profile(user_id, fernet_instance)
     if user_profile:
         system_prompt_parts.append("Вот ключевая информация о твоем пользователе, которую ты должен всегда учитывать для персонализации ответов:")
@@ -191,236 +192,32 @@ async def _get_system_instruction_text(user_id: int, fernet_instance: Fernet) ->
             'style': 'Предпочитаемый стиль общения', 'hobby': 'Хобби', 'rules': 'Особые правила'
         }
         
-        profile_text = ""
-        for key, value in user_profile.items():
-            display_key = profile_key_map.get(key, key.capitalize())
-            profile_text += f"- {display_key}: {value}\n"
+        profile_text = "\n".join(
+            f"- {profile_key_map.get(key, key.capitalize())}: {value}"
+            for key, value in user_profile.items() if value
+        )
         
-        system_prompt_parts.append(profile_text.strip())
+        system_prompt_parts.append(profile_text)
         system_prompt_parts.append("---")
 
-    # --- Шаг 3: Добавление персоны или стиля ---
-    persona_prompt = ""
+    # --- Шаг 3: Персона или стиль ---
     persona_id = await db_manager.get_user_persona(user_id)
-
+    persona_prompt = ""
     if persona_id != 'default':
-        persona_info = BOT_PERSONAS.get(persona_id, BOT_PERSONAS['default'])
-        prompt_key = f"prompt_{lang_code}"
-        persona_prompt = persona_info.get(prompt_key, persona_info.get('prompt_ru', ''))
-    else:
-        style_id = await db_manager.get_user_bot_style(user_id)
-        if style_id != 'default':
-            style_prompts = {
-                'formal': "You must answer in a strictly formal and business-like manner.",
-                'informal': "You should communicate in a friendly and informal way.",
-                'concise': "Your answers must be as short and to the point as possible.",
-                'detailed': "Provide detailed and comprehensive answers, explaining all aspects."
-            }
-            persona_prompt = style_prompts.get(style_id, "")
-
+        persona_info = BOT_PERSONAS.get(persona_id, {})
+        persona_prompt = persona_info.get(f"prompt_{lang_code}", persona_info.get('prompt_ru', ''))
+    
     if persona_prompt:
         system_prompt_parts.append(persona_prompt)
 
-    return "\n".join(system_prompt_parts).strip()
-
-async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], api_key: str, fernet_instance: Fernet, content_type: str = 'text') -> Tuple[str, List[Dict[str, str]]]:
-    """
-    Генерирует ответ от Gemini, динамически включая краткосрочную и долгосрочную память
-    с учетом особенностей разных семейств моделей (Gemini vs Gemma).
-
-    Args:
-        user_id (int): ID пользователя.
-        prompt (Union[str, List[Union[str, PIL.Image.Image, bytes]]]): Входной промпт,
-            который может быть текстом, или списком, включающим текст, PIL.Image.Image
-            (для изображений) или bytes (для аудио).
-        api_key (str): Google API ключ.
-        fernet_instance (Fernet): Экземпляр Fernet для шифрования/дешифрования данных.
-        content_type (str): Тип содержимого сообщения пользователя (например, 'text', 'photo', 'voice').
-
-    Returns:
-        Tuple[str, List[Dict[str, str]]]: Сгенерированный текстовый ответ и список источников.
-    """
-    active_dialog_id = await db_manager.get_active_dialog_id(user_id)
-    if not active_dialog_id:
-        gemini_logger.error(f"У пользователя {user_id} нет активного диалога для генерации ответа.")
-        raise GeminiAPIError("Не найден активный диалог. Пожалуйста, перезапустите бота командой /start.", details={})
-
-    # --- 1. Инициализация сервисов ---
-    try:
-        vector_store = VectorStoreManager(api_key=api_key)
-    except ValueError as e:
-        raise GeminiAPIError(str(e), details={"error": {"message": "API_KEY_INVALID"}})
-
-    model_name = await db_manager.get_user_gemini_model(user_id) or DEFAULT_MODEL_ID
-
-    # --- ВОЗВРАЩАЕМ ЛОГИКУ ДЛЯ GEMMA ---
-    is_gemma_model = model_name.startswith('gemma')
-
-    # Краткосрочная память (загружаем только для моделей, которые ее поддерживают)
-    history = []
-    if not is_gemma_model:
-        history = await _get_dialog_chat_history(active_dialog_id, fernet_instance)
-
-    model_meta = MODELS_METADATA.get(model_name, {})
-    use_search = model_meta.get("supports_search", False)
-    use_system_instruction = model_meta.get("supports_system_instruction", True)
-
-    gemini_logger.info(f"Генерация: user={user_id}, model={model_name}, search={use_search}, system_instr={use_system_instruction}, stateless={is_gemma_model}", extra={'user_id': str(user_id)})
-
-    # --- 2. Формирование промпта пользователя ---
-    user_parts = []
-    user_message_for_db = ""
-    # Блок if/elif для обработки текста, фото и голоса остается таким же, как в оригинале
-    if isinstance(prompt, str):
-        user_parts.append({"text": prompt})
-        user_message_for_db = prompt
-    elif isinstance(prompt, list):
-        text_part = ""
-        media_type = None
-        for item in prompt:
-            if isinstance(item, str):
-                text_part = item
-            elif isinstance(item, PIL.Image.Image):
-                media_type = "image"
-                buffered = BytesIO()
-                if item.mode == 'RGBA': item = item.convert('RGB')
-                item.save(buffered, format="JPEG")
-                img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                user_parts.append({"inline_data": {"mime_type": "image/jpeg", "data": img_str}})
-            elif isinstance(item, bytes):
-                media_type = "audio"
-                audio_str = base64.b64encode(item).decode('utf-8')
-                user_parts.append({"inline_data": {"mime_type": "audio/ogg", "data": audio_str}})
-        if text_part:
-            user_parts.append({"text": text_part})
-        if media_type == "image":
-            user_message_for_db = f"[Изображение] {text_part}".strip()
-        elif media_type == "audio":
-            user_message_for_db = f"[Голосовое сообщение] {text_part}".strip()
-        else:
-            user_message_for_db = text_part
-
-    # --- 3. Поиск и внедрение контекста из долговременной памяти ---
-    long_term_memory_context = ""
-    if user_message_for_db:
-        relevant_chunks = await vector_store.search_relevant_chunks(active_dialog_id, user_message_for_db, n_results=3)
-        if relevant_chunks:
-            context_header = "ВАЖНО: Сначала ищи ответ в предоставленном ниже контексте из долговременной памяти. Используй интернет-поиск только если в этом контексте нет ответа. Контекст из памяти:\n---"
-            formatted_chunks = "\n".join(f"- {chunk}" for chunk in relevant_chunks)
-            long_term_memory_context = f"{context_header}\n{formatted_chunks}\n---\n"
-
-    # --- 4. Сборка финального запроса к API ---
-    request_contents = list(history)
-    payload = {
-        "generationConfig": GENERATION_CONFIG,
-        "safetySettings": SAFETY_SETTINGS
+    # --- Шаг 4: Финальная директива по языку ---
+    language_directive = {
+        'ru': "Всегда отвечай на русском языке.",
+        'en': "Always respond in English."
     }
-
-    if use_system_instruction:
-        # Для Gemini Pro/Flash: контекст идет в system_instruction
-        static_system_instruction = await _get_system_instruction_text(user_id, fernet_instance) or ""
-        final_system_instruction = f"{long_term_memory_context}{static_system_instruction}".strip()
-        if final_system_instruction:
-            payload["system_instruction"] = { "parts": [{"text": final_system_instruction}] }
-        request_contents.append({"role": "user", "parts": user_parts})
-    else:
-        # Для Gemma: контекст внедряется прямо в промпт пользователя
-        if long_term_memory_context:
-            user_parts.insert(0, {"text": long_term_memory_context})
-        request_contents.append({"role": "user", "parts": user_parts})
-
-    payload["contents"] = request_contents
-
-    if use_search:
-        payload.update(GOOGLE_SEARCH_TOOL)
-
-    # Сохраняем сообщение пользователя в краткосрочную БД
-    await db_manager.store_message(user_id, active_dialog_id, 'user', user_message_for_db, fernet_instance, content_type) # <-- Передаем content_type
-
-    url = f"{GEMINI_API_BASE_URL}/models/{model_name}:generateContent"
-
-    try:
-        response_json = await _make_gemini_request_async(api_key, url, payload)
-        # ... остальная часть try-блока (обработка ответа) остается без изменений ...
-        # gemini_logger.debug(f"Сырой ответ от Gemini API для user_id {user_id}:\n{json.dumps(response_json, indent=2, ensure_ascii=False)}")
-        if not response_json or "candidates" not in response_json:
-            raise GeminiAPIError("Ответ API не содержит 'candidates'.", details=response_json)
-        first_candidate = response_json["candidates"][0]
-        if first_candidate.get("finishReason") == "SAFETY":
-             raise GeminiAPIError("Ответ заблокирован настройками безопасности.", details={"finish_reason": "SAFETY"})
-        response_text = ""
-        # Проверяем, есть ли 'parts' в ответе. Если нет, это, скорее всего, вызов инструмента.
-        if 'parts' in first_candidate.get("content", {}):
-            response_text = "".join(part.get("text", "") for part in first_candidate["content"]["parts"]).strip()
-        else:
-            # Если 'parts' нет, логируем это для отладки.
-            # В будущем здесь можно будет реализовать обработку tool_calls.
-            gemini_logger.info(f"Ответ кандидата не содержит 'parts', возможно, это tool_call. Ответ: {first_candidate.get('content')}", extra={'user_id': str(user_id)})  
-            sources = []
-        metadata = first_candidate.get('groundingMetadata', {})
-        if 'groundingAttributions' in metadata:
-            for attr in metadata['groundingAttributions']:
-                if 'web' in attr and attr['web'].get('uri') and attr['web'].get('title'):
-                    sources.append({"uri": attr['web']['uri'], "title": attr['web']['title']})
-        elif 'groundingChunks' in metadata:
-            for chunk in metadata['groundingChunks']:
-                if 'web' in chunk and chunk['web'].get('uri') and chunk['web'].get('title'):
-                    source_item = {"uri": chunk['web']['uri'], "title": chunk['web']['title']}
-                    if source_item not in sources:
-                        sources.append(source_item)
-
-        # --- ВОЗВРАЩАЕМ УСЛОВНОЕ ОБНОВЛЕНИЕ КЭША ---
-        if not is_gemma_model:
-            history.append({"role": "user", "parts": user_parts})
-            history.append({"role": "model", "parts": [{"text": response_text}]})
-
-        usage_metadata = response_json.get('usageMetadata', {})
-        prompt_tokens = usage_metadata.get('promptTokenCount', 0)
-        completion_tokens = usage_metadata.get('candidatesTokenCount', 0)
-        total_tokens = usage_metadata.get('totalTokenCount', 0)
-
-        await db_manager.store_message(
-            user_id=user_id, dialog_id=active_dialog_id, role='bot',
-            message_text=response_text, fernet_instance=fernet_instance,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens, total_tokens=total_tokens
-        )
-
-        # --- Сохранение в долговременную память (фоновое) ---
-        if user_message_for_db and response_text:
-            text_to_memorize = f"Вопрос пользователя: {user_message_for_db}\nОтвет ассистента: {response_text}"
-
-            # Метаданные для пользовательского сообщения
-            user_metadata = {
-                "role": "user",
-                "content_type": content_type, # <-- Используем content_type из аргумента функции
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), # ИСПРАВЛЕНО ЗДЕСЬ
-                "user_id": user_id,
-                "dialog_id": active_dialog_id
-            }
-            # Метаданные для ответа бота
-            bot_metadata = {
-                "role": "bot",
-                "content_type": "text", # Ответ бота всегда текст
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), # ИСПРАВЛЕНО ЗДЕСЬ
-                "user_id": user_id,
-                "dialog_id": active_dialog_id
-            }
-            # Добавляем оба сообщения в векторную базу
-            asyncio.create_task(
-                vector_store.add_chunk(active_dialog_id, user_message_for_db, user_metadata)
-            )
-            asyncio.create_task(
-                vector_store.add_chunk(active_dialog_id, response_text, bot_metadata)
-            )
-
-        return response_text, sources
-
-    except GeminiAPIError:
-        # --- ВОЗВРАЩАЕМ УСЛОВНОЕ УДАЛЕНИЕ ИЗ КЭША ---
-        if history and not is_gemma_model: 
-            history.pop()
-        raise
+    system_prompt_parts.append(language_directive.get(lang_code, "Always respond in Russian."))
+    
+    return "\n".join(system_prompt_parts).strip()
 
 async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], api_key: str, fernet_instance: Fernet, content_type: str = 'text') -> Tuple[str, List[Dict[str, str]]]:
     """
@@ -469,7 +266,6 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
     # --- 2. Формирование промпта пользователя ---
     user_parts = []
     user_message_for_db = ""
-    # Этот блок остается без изменений, т.к. его логика корректна
     if isinstance(prompt, str):
         user_parts.append({"text": prompt})
         user_message_for_db = prompt
@@ -494,10 +290,9 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
             user_parts.append({"text": text_part})
         user_message_for_db = f"[{media_type or 'media'}] {text_part}".strip()
     
-    # --- 3. Поиск и внедрение контекста из долговременной памяти (НОВАЯ ЛОГИКА) ---
+    # --- 3. Поиск и внедрение контекста из долговременной памяти ---
     long_term_memory_context = ""
     if user_message_for_db:
-        # Сначала ищем в "надежных" источниках: документах и сводках
         reliable_chunks = await vector_store.search_relevant_chunks(
             active_dialog_id, 
             user_message_for_db, 
@@ -505,14 +300,12 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
             metadata_filter={"$or": [{"content_type": "document"}, {"content_type": "summary"}]}
         )
         
-        # Затем ищем в общей истории диалога
         general_chunks = await vector_store.search_relevant_chunks(
             active_dialog_id, 
             user_message_for_db, 
-            n_results=2 # Берем меньше, т.к. это менее приоритетная информация
+            n_results=2
         )
         
-        # Объединяем и удаляем дубликаты, сохраняя порядок (сначала надежные)
         all_chunks = list(dict.fromkeys(reliable_chunks + general_chunks))
         
         if all_chunks:
@@ -521,7 +314,6 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
             long_term_memory_context = f"{context_header}\n{formatted_chunks}\n---\n"
 
     # --- 4. Сборка финального запроса к API ---
-    # Эта часть остается без изменений
     request_contents = list(history)
     payload = {
         "generationConfig": GENERATION_CONFIG,
@@ -544,32 +336,44 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
     if use_search:
         payload.update(GOOGLE_SEARCH_TOOL)
 
-    await db_manager.store_message(user_id, active_dialog_id, 'user', user_message_for_db, fernet_instance, content_type)
-
     url = f"{GEMINI_API_BASE_URL}/models/{model_name}:generateContent"
 
     try:
         response_json = await _make_gemini_request_async(api_key, url, payload)
-        # Блок обработки ответа и сохранения в БД/память остается прежним
-        if not response_json or "candidates" not in response_json:
-            raise GeminiAPIError("Ответ API не содержит 'candidates'.", details=response_json)
-        first_candidate = response_json["candidates"][0]
-        if first_candidate.get("finishReason") == "SAFETY":
-             raise GeminiAPIError("Ответ заблокирован настройками безопасности.", details={"finish_reason": "SAFETY"})
-        response_text = "".join(part.get("text", "") for part in first_candidate["content"]["parts"]).strip()  
+        
+        response_text = ""
+        # Проверяем, есть ли 'parts' в ответе. Если нет, это, скорее всего, вызов инструмента.
+        first_candidate = response_json.get("candidates", [{}])[0]
+        if 'parts' in first_candidate.get("content", {}):
+            response_text = "".join(part.get("text", "") for part in first_candidate["content"]["parts"]).strip()
+        else:
+            gemini_logger.info(f"Ответ кандидата не содержит 'parts', возможно, это tool_call. Ответ: {first_candidate.get('content')}", extra={'user_id': str(user_id)})
         
         sources = []
-        metadata = first_candidate.get('groundingMetadata', {})
-        if 'groundingAttributions' in metadata:
-            for attr in metadata['groundingAttributions']:
-                if 'web' in attr and attr['web'].get('uri') and attr['web'].get('title'):
-                    sources.append({"uri": attr['web']['uri'], "title": attr['web']['title']})
+        if 'groundingMetadata' in first_candidate:
+            metadata = first_candidate.get('groundingMetadata', {})
+            if 'groundingAttributions' in metadata:
+                for attr in metadata['groundingAttributions']:
+                    if 'web' in attr and attr['web'].get('uri') and attr['web'].get('title'):
+                        sources.append({"uri": attr['web']['uri'], "title": attr['web']['title']})
+
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        # Сначала сохраняем сообщение пользователя в краткосрочную БД
+        await db_manager.store_message(
+            user_id=user_id, dialog_id=active_dialog_id, role='user',
+            message_text=user_message_for_db, fernet_instance=fernet_instance,
+            content_type=content_type
+        )
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
         
         if not is_gemma_model:
             history.append({"role": "user", "parts": user_parts})
             history.append({"role": "model", "parts": [{"text": response_text}]})
 
         usage_metadata = response_json.get('usageMetadata', {})
+        
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        # Теперь сохраняем ответ бота и статистику
         await db_manager.store_message(
             user_id=user_id, dialog_id=active_dialog_id, role='bot',
             message_text=response_text, fernet_instance=fernet_instance,
@@ -577,6 +381,7 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
             completion_tokens=usage_metadata.get('candidatesTokenCount', 0), 
             total_tokens=usage_metadata.get('totalTokenCount', 0)
         )
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
         if user_message_for_db and response_text:
             timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -591,7 +396,7 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
         if history and not is_gemma_model: 
             history.pop()
         raise
-
+    
 async def generate_content_simple(api_key: str, prompt: str) -> str:
     """Генерирует ответ от Gemini без истории. Выбрасывает GeminiAPIError."""
     url = f"{GEMINI_API_BASE_URL}/models/{DEFAULT_MODEL_ID}:generateContent"
