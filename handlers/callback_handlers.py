@@ -182,11 +182,10 @@ async def handle_panic_password_setup(bot: AsyncTeleBot, call: types.CallbackQue
         await bot.set_state(user_id, STATE_ZK_WAITING_FOR_PANIC_SETUP, call.message.chat.id)
         await bot.send_message(user_id, loc.get_text('panic_password_ask', lang_code))
     else:
+        # Пользователь отказался, переходим к установке API ключа
         await bot.send_message(user_id, loc.get_text('panic_password_setup_skipped', lang_code))
-        
-        # Анкета уже пройдена, показываем основную клавиатуру
-        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
-        await bot.send_message(user_id, "Настройка завершена! Можете начинать работу.", reply_markup=main_keyboard)
+        await bot.set_state(user_id, settings.STATE_WAITING_FOR_API_KEY, call.message.chat.id)
+        await bot.send_message(user_id, loc.get_text('set_api_key_prompt', lang_code))
 
     await tg_helpers.answer_callback_query(bot, call)
 

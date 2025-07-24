@@ -259,10 +259,10 @@ async def _handle_state_panic_password_setup(message: types.Message, bot: AsyncT
 
 async def _handle_state_panic_password_confirm(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает подтверждение пароля паники и завершает настройку.
+    Обрабатывает подтверждение пароля паники и переходит к установке API-ключа.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий подтверждение пароля.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
@@ -277,9 +277,9 @@ async def _handle_state_panic_password_confirm(message: types.Message, bot: Asyn
         await bot.delete_state(user_id, message.chat.id)
         await bot.send_message(user_id, loc.get_text('panic_password_set_success', lang_code))
         
-        # Так как анкета уже пройдена, просто показываем основную клавиатуру
-        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
-        await bot.send_message(user_id, "Настройка завершена! Можете начинать работу.", reply_markup=main_keyboard)
+        # Переходим к установке API ключа
+        await bot.set_state(user_id, settings.STATE_WAITING_FOR_API_KEY, message.chat.id)
+        await bot.send_message(user_id, loc.get_text('set_api_key_prompt', lang_code))
     else:
         await bot.set_state(user_id, STATE_ZK_WAITING_FOR_PANIC_SETUP, message.chat.id)
         await bot.send_message(user_id, loc.get_text('panic_password_mismatch', lang_code))
@@ -422,7 +422,7 @@ async def _handle_state_message_to_user(message: types.Message, bot: AsyncTeleBo
 
 async def _handle_state_api_key(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод Google AI API ключа.
+    Обрабатывает ввод Google AI API ключа и завершает настройку.
 
     Args:
         message (types.Message): Объект сообщения Telegram.
@@ -436,18 +436,24 @@ async def _handle_state_api_key(message: types.Message, bot: AsyncTeleBot):
     if not fernet_instance:
         await bot.reply_to(message, "Критическая ошибка: сессия не найдена для шифрования ключа.")
         return
+        
     try:
         await bot.delete_message(message.chat.id, message.message_id)
     except Exception: pass
+    
     status_msg = await bot.send_message(user_id, loc.get_text('api_key_verifying', lang_code))
     is_valid = await gemini_service.validate_api_key(api_key_plain)
+    
     try:
         await bot.delete_message(user_id, status_msg.message_id)
     except Exception: pass
+        
     if is_valid:
         await db_manager.set_user_api_key(user_id, api_key_plain, fernet_instance)
         await bot.delete_state(message.from_user.id, message.chat.id)
-        await bot.send_message(user_id, loc.get_text('api_key_success', lang_code))
+        
+        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+        await bot.send_message(user_id, loc.get_text('api_key_success', lang_code), reply_markup=main_keyboard)
     else:
         await bot.send_message(user_id, loc.get_text('api_key_invalid', lang_code))
 

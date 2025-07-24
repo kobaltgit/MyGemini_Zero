@@ -53,7 +53,7 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'profile_q_style': "**6/8. Какой стиль общения вы предпочитаете?**",
         'profile_q_hobby': "**7/8. Чем вы увлекаетесь в свободное время? Какие у вас хобби?**\n*Например: шахматы, путешествия, научная фантастика.*",
         'profile_q_rules': "**8/8. Есть ли темы, которые мне следует избегать, или \"золотое правило\", которое я всегда должен соблюдать?**\n*Например: \"Никогда не давать финансовых советов\", \"Всегда предлагать несколько вариантов\".*",
-        'profile_end': "✅ **Отлично, настройка завершена!**\n\nЯ сохранил эту информацию в вашу персональную память. Вы всегда можете просмотреть и изменить этот профиль с помощью команды `/profile`.\n\n**Двигаемся дальше.**",
+        'profile_end': "✅ **Отлично, профиль сохранен!**\n\nЯ запомнил эту информацию. Остался последний шаг для завершения настройки.",
         
         # --- НОВЫЙ РАЗДЕЛ: Кнопки для анкеты ---
         'profile_btn_purpose_work': "Помощь в работе",
@@ -315,7 +315,7 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'profile_q_style': "**6/8. What communication style do you prefer?**",
         'profile_q_hobby': "**7/8. What are your hobbies or interests in your free time?**\n*E.g., chess, traveling, science fiction.*",
         'profile_q_rules': "**8/8. Are there any topics I should avoid, or a \"golden rule\" I should always follow?**\n*E.g., \"Never give financial advice,\" \"Always offer several options.\"*",
-        'profile_end': "✅ **Great, setup is complete!**\n\nI have saved this information to your personal memory. You can always view and change this profile using the `/profile` command.\n\n**Moving on.**",
+        'profile_end': "✅ **Great, profile saved!**\n\nI have stored this information. There is just one last step to complete the setup.",
         
         # --- NEW SECTION: Buttons for questionnaire ---
         'profile_btn_purpose_work': "Help with work",
