@@ -38,6 +38,9 @@ PBKDF2_ITERATIONS = 480000
 # будет считаться "заблокированной" и потребует повторного ввода мастер-пароля.
 SESSION_TIMEOUT_SECONDS = int(timedelta(hours=1).total_seconds())
 
+# Дни, после которых детальная память считается "старой" и подлежит архивации
+DEFAULT_ARCHIVE_DAYS = 30 # <-- НОВАЯ КОНСТАНТА
+
 # --- Gemini API Settings ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "gemini-1.5-flash-latest")
@@ -279,6 +282,7 @@ STATE_ADMIN_WAITING_FOR_USER_ID_TO_MESSAGE = 'admin_waiting_for_user_id_message'
 # STATE_ADMIN_WAITING_FOR_MESSAGE_TO_USER = 'admin_waiting_for_message_to_user'
 
 # --- НОВЫЕ СОСТОЯНИЯ ДЛЯ ZERO-KNOWLEDGE и ПРОФИЛЯ ---
+STATE_WAITING_FOR_ARCHIVE_PERIOD = 'waiting_for_archive_period' # <-- НОВОЕ СОСТОЯНИЕ ДЛЯ АРХИВАЦИИ
 STATE_ZK_WAITING_FOR_PASSWORD_SETUP = 'zk_waiting_for_password_setup'
 STATE_ZK_WAITING_FOR_PASSWORD_CONFIRM = 'zk_waiting_for_password_confirm'
 STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK = 'zk_waiting_for_password_unlock'

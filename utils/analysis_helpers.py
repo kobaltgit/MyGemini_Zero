@@ -17,7 +17,7 @@
 
 import re
 from collections import Counter
-from typing import List, Tuple, Dict, Any # <-- Добавили Dict, Any
+from typing import List, Dict, Any
 
 # Можно добавить стоп-слова из файла или библиотеки (nltk, spacy)
 # Загрузка стоп-слов (пример)

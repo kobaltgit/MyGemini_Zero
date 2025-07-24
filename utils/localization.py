@@ -125,6 +125,16 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'memory_file_error_read': "❌ Не удалось прочитать содержимое файла. Убедитесь, что он в кодировке UTF-8.",
         'memory_file_error_general': "❌ Произошла ошибка при обработке файла.",
 
+        # --- НОВЫЙ РАЗДЕЛ: Архивация памяти ---
+        'memory_archiving_prompt': "🗑️ **Архивация памяти**\n\nЯ могу сжать старые сообщения, чтобы освободить место и ускорить работу, заменив их краткими сводками.\n\nВведите количество дней. Все сообщения старше указанного срока (включая сообщения бота и ваши) будут проанализированы, суммаризированы и заменены одной сводкой в вашем активном диалоге. Например, `30` для архивации сообщений старше 30 дней.\n\n*Это действие может занять время и НЕОБРАТИМО.*",
+        'memory_archiving_invalid_period': "❌ Неверное количество дней. Пожалуйста, введите целое положительное число (например, `30`).",
+        'memory_archiving_no_old_messages': "✅ Нет сообщений старше {days} дней для архивации в текущем диалоге.",
+        'memory_archiving_started': "⏳ Начата архивация сообщений старше {days} дней. Это может занять несколько минут. Я уведомлю вас по завершении.",
+        'memory_archiving_processing': "⏳ Обрабатываю сообщения {current_date_str}...",
+        'memory_archiving_done': "✅ Архивация памяти завершена! За этот период было сжато {summarized_periods} фрагментов истории.",
+        'memory_archiving_error': "❌ Произошла ошибка во время архивации памяти. Пожалуйста, попробуйте позже.",
+        'memory_archiving_error_api_key': "Для архивации памяти необходим API ключ.",
+
         'set_api_key_prompt': "Пожалуйста, отправьте ваш Google AI API ключ. Сообщение с ключом будет удалено.",
         'history_prompt': "🗓️ Пожалуйста, выберите дату для просмотра истории текущего диалога:",
         'translate_prompt': "Выберите язык, на который нужно перевести текст:",
@@ -356,6 +366,16 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'memory_file_error_size': "❌ The file is too large. The maximum size is 1 MB.",
         'memory_file_error_read': "❌ Could not read the file's content. Please ensure it is UTF-8 encoded.",
         'memory_file_error_general': "❌ An error occurred while processing the file.",
+
+        # --- NEW SECTION: Memory Archiving ---
+        'memory_archiving_prompt': "🗑️ **Memory Archiving**\n\nI can compress old messages to free up space and speed up operation by replacing them with concise summaries.\n\nEnter the number of days. All messages older than the specified period (including bot messages and yours) will be analyzed, summarized, and replaced with a single summary in your active dialogue. For example, `30` to archive messages older than 30 days.\n\n*This action may take time and is IRREVERSIBLE.*",
+        'memory_archiving_invalid_period': "❌ Invalid number of days. Please enter a positive integer (e.g., `30`).",
+        'memory_archiving_no_old_messages': "✅ No messages older than {days} days to archive in the current dialogue.",
+        'memory_archiving_started': "⏳ Archiving messages older than {days} days has started. This may take a few minutes. I will notify you upon completion.",
+        'memory_archiving_processing': "⏳ Processing messages from {current_date_str}...",
+        'memory_archiving_done': "✅ Memory archiving complete! {summarized_periods} history segments were compressed during this period.",
+        'memory_archiving_error': "❌ An error occurred during memory archiving. Please try again later.",
+        'memory_archiving_error_api_key': "An API key is required for memory archiving.",
 
         'set_api_key_prompt': "Please send your Google AI API key. The message with the key will be deleted.",
         'history_prompt': "🗓️ Please select a date to view the history of the current dialog:",

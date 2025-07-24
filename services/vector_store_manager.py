@@ -27,7 +27,8 @@
 """
 import os
 import time
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
 
 import chromadb
 from chromadb.config import Settings # <-- НОВЫЙ ИМПОРТ
@@ -105,23 +106,27 @@ class VectorStoreManager:
         )
         return collection
 
-    async def add_dialog_text(self, dialog_id: int, text: str):
+    async def add_chunk(self, dialog_id: int, text_content: str, metadata: Dict[str, Any]):
         """
-        Добавляет текст (например, сообщение из диалога) в долговременную память.
+        Добавляет текст (например, сообщение или сводку) в долговременную память,
+        обогащая его метаданными.
 
         Текст сначала разбивается на чанки, затем для каждого чанка создается
         эмбеддинг, и он сохраняется в соответствующей коллекции диалога.
 
         Args:
             dialog_id (int): ID диалога, к которому относится текст.
-            text (str): Текст для добавления в память.
+            text_content (str): Текст для добавления в память.
+            metadata (Dict[str, Any]): Словарь метаданных, например,
+                                       {'role': 'user', 'content_type': 'text',
+                                        'timestamp': 'ISO_STRING', 'user_id': user_id}.
         """
-        if not text.strip():
+        if not text_content.strip():
             return
 
-        logger.info(f"Добавление текста в память для диалога {dialog_id}...")
+        logger.info(f"Добавление чанка в память для диалога {dialog_id}...")
         collection = self._get_or_create_collection(dialog_id)
-        chunks = self.text_splitter.split_text(text)
+        chunks = self.text_splitter.split_text(text_content)
 
         if not chunks:
             return
@@ -132,23 +137,37 @@ class VectorStoreManager:
         # Генерируем эмбеддинги для всех чанков одним запросом
         embeddings = await self.embedding_model.aembed_documents(chunks)
 
+        # Дублируем метаданные для каждого чанка
+        metadatas_list = [metadata] * len(chunks)
+
         # Добавляем чанки, их эмбеддинги и метаданные в коллекцию
         collection.add(
             embeddings=embeddings,
             documents=chunks,
-            metadatas=[{"source": "dialog_history"}] * len(chunks),
+            metadatas=metadatas_list, # <--- ИСПОЛЬЗУЕМ ПЕРЕДАННЫЕ МЕТАДАННЫЕ
             ids=ids
         )
         logger.info(f"Добавлено {len(chunks)} чанков в память для диалога {dialog_id}.")
 
-    async def search_relevant_chunks(self, dialog_id: int, query_text: str, n_results: int = 3) -> List[str]:
+    async def search_relevant_chunks(
+        self, 
+        dialog_id: int, 
+        query_text: str, 
+        n_results: int = 3, 
+        metadata_filter: Optional[Dict[str, Any]] = None, 
+        keyword_filter: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
         """
-        Выполняет семантический поиск по памяти диалога.
+        Выполняет гибридный поиск по памяти диалога с фильтрацией.
 
         Args:
             dialog_id (int): ID диалога для поиска.
             query_text (str): Поисковый запрос (например, вопрос пользователя).
             n_results (int): Количество релевантных фрагментов для возврата.
+            metadata_filter (Optional[Dict[str, Any]]): Фильтр по метаданным.
+                Пример: `{"content_type": "document"}`
+            keyword_filter (Optional[Dict[str, Any]]): Фильтр по содержимому текста.
+                Пример: `{"$contains": "важное_слово"}`
 
         Returns:
             List[str]: Список наиболее релевантных текстовых фрагментов из памяти.
@@ -158,23 +177,72 @@ class VectorStoreManager:
             if collection.count() == 0:
                 logger.debug(f"Поиск в диалоге {dialog_id} пропущен, т.к. память пуста.")
                 return []
-            
-            # Создаем эмбеддинг для поискового запроса
+
+            # Создаем эмбеддинг для семантического поиска
             query_embedding = await self.embedding_model.aembed_query(query_text)
 
-            # Выполняем поиск
+            # Выполняем поиск, используя семантику и фильтры
             results = collection.query(
                 query_embeddings=[query_embedding],
-                n_results=min(n_results, collection.count()) # Убедимся, что не запрашиваем больше, чем есть
+                n_results=min(n_results, collection.count()),
+                where=metadata_filter,
+                where_document=keyword_filter
             )
-            
+
             found_docs = results.get('documents', [[]])[0]
-            logger.info(f"Найдено {len(found_docs)} релевантных чанков в памяти для диалога {dialog_id}.")
+            logger.info(
+                f"Найдено {len(found_docs)} релевантных чанков в диалоге {dialog_id} "
+                f"с фильтрами: метаданные={metadata_filter}, ключевые слова={keyword_filter}."
+            )
             return found_docs
 
         except Exception as e:
             logger.exception(f"Ошибка при поиске в векторной базе для диалога {dialog_id}: {e}")
             return []
+
+    async def add_summary_chunk(self, dialog_id: int, user_id: int, summary_text: str, original_period_start: datetime, original_period_end: datetime):
+        """
+        Добавляет суммаризированный чанк в долговременную память.
+
+        Эти чанки будут иметь специальный тип 'summary' и метаданные, указывающие
+        период, который они охватывают.
+
+        Args:
+            dialog_id (int): ID диалога, к которому относится сводка.
+            user_id (int): ID пользователя.
+            summary_text (str): Текст сводки.
+            original_period_start (datetime): Начало периода, который охватывает сводка.
+            original_period_end (datetime): Конец периода, который охватывает сводка.
+        """
+        if not summary_text.strip():
+            return
+
+        logger.info(f"Добавление summary чанка для диалога {dialog_id}, охватывающего период с {original_period_start.isoformat()} по {original_period_end.isoformat()}...")
+        collection = self._get_or_create_collection(dialog_id)
+
+        # Создаем специальный ID для summary
+        summary_id = f"summary_{dialog_id}_{int(time.time())}"
+
+        # Генерируем эмбеддинг для сводки
+        summary_embedding = await self.embedding_model.aembed_documents([summary_text])
+
+        # Метаданные для summary чанка
+        summary_metadata = {
+            "type": "summary",
+            "dialog_id": dialog_id,
+            "user_id": user_id,
+            "period_start": original_period_start.isoformat(),
+            "period_end": original_period_end.isoformat(),
+            "created_at": datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+        collection.add(
+            embeddings=summary_embedding,
+            documents=[summary_text],
+            metadatas=[summary_metadata],
+            ids=[summary_id]
+        )
+        logger.info(f"Summary чанк для диалога {dialog_id} успешно добавлен.")
 
     def delete_dialog_memory(self, dialog_id: int):
         """
@@ -192,3 +260,44 @@ class VectorStoreManager:
             logger.warning(f"Попытка удаления несуществующей памяти (коллекции '{collection_name}') для диалога {dialog_id}. Это нормальная ситуация.")
         except Exception as e:
             logger.exception(f"Ошибка при удалении памяти для диалога {dialog_id}: {e}")
+
+    async def delete_chunks_by_dialog_and_timestamp(self, dialog_id: int, cutoff_timestamp: datetime):
+        """
+        Удаляет все чанки из указанного диалога, которые были созданы до указанной временной метки.
+        Исключает чанки типа 'summary', чтобы не удалять архивированные сводки.
+
+        Args:
+            dialog_id (int): ID диалога, из которого нужно удалить чанки.
+            cutoff_timestamp (datetime): Временная метка, до которой чанки должны быть удалены.
+        """
+        collection_name = f"dialog_{dialog_id}"
+
+        try:
+            collection = self.client.get_collection(name=collection_name)
+
+            # Удаляем чанки, где timestamp < cutoff_timestamp и тип не 'summary'
+            # (предполагаем, что timestamp хранится в метаданных и является строкой ISO)
+            results = collection.get(
+                where={
+                    "timestamp": {"$lt": cutoff_timestamp.isoformat()},
+                    "type": {"$ne": "summary"}
+                },
+                # Здесь мы запрашиваем только ID, так как нам нужно удалить их
+                # Примечание: ChromaDB пока не поддерживает прямое удаление по where_document
+                # напрямую без предварительного получения ID.
+                # Поэтому мы сначала получаем ID, а затем удаляем.
+                # Это может быть неэффективно для очень больших коллекций.
+            )
+
+            ids_to_delete = results.get('ids', [])
+
+            if ids_to_delete:
+                collection.delete(ids=ids_to_delete)
+                logger.info(f"Удалено {len(ids_to_delete)} старых чанков из диалога {dialog_id} до {cutoff_timestamp.isoformat()}.")
+            else:
+                logger.debug(f"Нет старых чанков для удаления в диалоге {dialog_id} до {cutoff_timestamp.isoformat()}.")
+
+        except chromadb.errors.NotFoundError:
+            logger.warning(f"Коллекция '{collection_name}' для диалога {dialog_id} не найдена. Нечего удалять.")
+        except Exception as e:
+            logger.exception(f"Ошибка при удалении старых чанков для диалога {dialog_id}: {e}")

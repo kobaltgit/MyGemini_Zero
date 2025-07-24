@@ -16,6 +16,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import datetime
 import aiohttp
 import PIL.Image
 from typing import List, Union, Dict, Optional, Any, Tuple
@@ -222,10 +223,22 @@ async def _get_system_instruction_text(user_id: int, fernet_instance: Fernet) ->
 
     return "\n".join(system_prompt_parts).strip()
 
-async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], api_key: str, fernet_instance: Fernet) -> Tuple[str, List[Dict[str, str]]]:
+async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], api_key: str, fernet_instance: Fernet, content_type: str = 'text') -> Tuple[str, List[Dict[str, str]]]:
     """
     Генерирует ответ от Gemini, динамически включая краткосрочную и долгосрочную память
     с учетом особенностей разных семейств моделей (Gemini vs Gemma).
+
+    Args:
+        user_id (int): ID пользователя.
+        prompt (Union[str, List[Union[str, PIL.Image.Image, bytes]]]): Входной промпт,
+            который может быть текстом, или списком, включающим текст, PIL.Image.Image
+            (для изображений) или bytes (для аудио).
+        api_key (str): Google API ключ.
+        fernet_instance (Fernet): Экземпляр Fernet для шифрования/дешифрования данных.
+        content_type (str): Тип содержимого сообщения пользователя (например, 'text', 'photo', 'voice').
+
+    Returns:
+        Tuple[str, List[Dict[str, str]]]: Сгенерированный текстовый ответ и список источников.
     """
     active_dialog_id = await db_manager.get_active_dialog_id(user_id)
     if not active_dialog_id:
@@ -239,18 +252,18 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
         raise GeminiAPIError(str(e), details={"error": {"message": "API_KEY_INVALID"}})
 
     model_name = await db_manager.get_user_gemini_model(user_id) or DEFAULT_MODEL_ID
-    
+
     # --- ВОЗВРАЩАЕМ ЛОГИКУ ДЛЯ GEMMA ---
     is_gemma_model = model_name.startswith('gemma')
-    
+
     # Краткосрочная память (загружаем только для моделей, которые ее поддерживают)
     history = []
     if not is_gemma_model:
         history = await _get_dialog_chat_history(active_dialog_id, fernet_instance)
-    
+
     model_meta = MODELS_METADATA.get(model_name, {})
     use_search = model_meta.get("supports_search", False)
-    use_system_instruction = model_meta.get("supports_system_instruction", False)
+    use_system_instruction = model_meta.get("supports_system_instruction", True)
 
     gemini_logger.info(f"Генерация: user={user_id}, model={model_name}, search={use_search}, system_instr={use_system_instruction}, stateless={is_gemma_model}", extra={'user_id': str(user_id)})
 
@@ -286,7 +299,7 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
             user_message_for_db = f"[Голосовое сообщение] {text_part}".strip()
         else:
             user_message_for_db = text_part
-    
+
     # --- 3. Поиск и внедрение контекста из долговременной памяти ---
     long_term_memory_context = ""
     if user_message_for_db:
@@ -320,16 +333,16 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
 
     if use_search:
         payload.update(GOOGLE_SEARCH_TOOL)
-    
+
     # Сохраняем сообщение пользователя в краткосрочную БД
-    await db_manager.store_message(user_id, active_dialog_id, 'user', user_message_for_db, fernet_instance)
-    
+    await db_manager.store_message(user_id, active_dialog_id, 'user', user_message_for_db, fernet_instance, content_type) # <-- Передаем content_type
+
     url = f"{GEMINI_API_BASE_URL}/models/{model_name}:generateContent"
-    
+
     try:
         response_json = await _make_gemini_request_async(api_key, url, payload)
         # ... остальная часть try-блока (обработка ответа) остается без изменений ...
-        gemini_logger.debug(f"Сырой ответ от Gemini API для user_id {user_id}:\n{json.dumps(response_json, indent=2, ensure_ascii=False)}")
+        # gemini_logger.debug(f"Сырой ответ от Gemini API для user_id {user_id}:\n{json.dumps(response_json, indent=2, ensure_ascii=False)}")
         if not response_json or "candidates" not in response_json:
             raise GeminiAPIError("Ответ API не содержит 'candidates'.", details=response_json)
         first_candidate = response_json["candidates"][0]
@@ -348,7 +361,7 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
                     source_item = {"uri": chunk['web']['uri'], "title": chunk['web']['title']}
                     if source_item not in sources:
                         sources.append(source_item)
-        
+
         # --- ВОЗВРАЩАЕМ УСЛОВНОЕ ОБНОВЛЕНИЕ КЭША ---
         if not is_gemma_model:
             history.append({"role": "user", "parts": user_parts})
@@ -365,18 +378,209 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens, total_tokens=total_tokens
         )
-        
+
         # --- Сохранение в долговременную память (фоновое) ---
         if user_message_for_db and response_text:
             text_to_memorize = f"Вопрос пользователя: {user_message_for_db}\nОтвет ассистента: {response_text}"
+
+            # Метаданные для пользовательского сообщения
+            user_metadata = {
+                "role": "user",
+                "content_type": content_type, # <-- Используем content_type из аргумента функции
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), # ИСПРАВЛЕНО ЗДЕСЬ
+                "user_id": user_id,
+                "dialog_id": active_dialog_id
+            }
+            # Метаданные для ответа бота
+            bot_metadata = {
+                "role": "bot",
+                "content_type": "text", # Ответ бота всегда текст
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), # ИСПРАВЛЕНО ЗДЕСЬ
+                "user_id": user_id,
+                "dialog_id": active_dialog_id
+            }
+            # Добавляем оба сообщения в векторную базу
             asyncio.create_task(
-                vector_store.add_dialog_text(active_dialog_id, text_to_memorize)
+                vector_store.add_chunk(active_dialog_id, user_message_for_db, user_metadata)
+            )
+            asyncio.create_task(
+                vector_store.add_chunk(active_dialog_id, response_text, bot_metadata)
             )
 
         return response_text, sources
 
     except GeminiAPIError:
         # --- ВОЗВРАЩАЕМ УСЛОВНОЕ УДАЛЕНИЕ ИЗ КЭША ---
+        if history and not is_gemma_model: 
+            history.pop()
+        raise
+
+async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], api_key: str, fernet_instance: Fernet, content_type: str = 'text') -> Tuple[str, List[Dict[str, str]]]:
+    """
+    Генерирует ответ от Gemini, динамически включая краткосрочную и долгосрочную память
+    с учетом особенностей разных семейств моделей (Gemini vs Gemma).
+
+    Args:
+        user_id (int): ID пользователя.
+        prompt (Union[str, List[Union[str, PIL.Image.Image, bytes]]]): Входной промпт,
+            который может быть текстом, или списком, включающим текст, PIL.Image.Image
+            (для изображений) или bytes (для аудио).
+        api_key (str): Google API ключ.
+        fernet_instance (Fernet): Экземпляр Fernet для шифрования/дешифрования данных.
+        content_type (str): Тип содержимого сообщения пользователя (например, 'text', 'photo', 'voice').
+
+    Returns:
+        Tuple[str, List[Dict[str, str]]]: Сгенерированный текстовый ответ и список источников.
+    """
+    active_dialog_id = await db_manager.get_active_dialog_id(user_id)
+    if not active_dialog_id:
+        gemini_logger.error(f"У пользователя {user_id} нет активного диалога для генерации ответа.")
+        raise GeminiAPIError("Не найден активный диалог. Пожалуйста, перезапустите бота командой /start.", details={})
+
+    # --- 1. Инициализация сервисов ---
+    try:
+        vector_store = VectorStoreManager(api_key=api_key)
+    except ValueError as e:
+        raise GeminiAPIError(str(e), details={"error": {"message": "API_KEY_INVALID"}})
+
+    model_name = await db_manager.get_user_gemini_model(user_id) or DEFAULT_MODEL_ID
+    is_gemma_model = model_name.startswith('gemma')
+
+    history = []
+    if not is_gemma_model:
+        history = await _get_dialog_chat_history(active_dialog_id, fernet_instance)
+
+    model_meta = MODELS_METADATA.get(model_name, {})
+    use_search = model_meta.get("supports_search", False)
+    use_system_instruction = model_meta.get("supports_system_instruction", True)
+
+    gemini_logger.info(
+        f"Генерация: user={user_id}, model={model_name}, search={use_search}, system_instr={use_system_instruction}, stateless={is_gemma_model}",
+        extra={'user_id': str(user_id)}
+    )
+
+    # --- 2. Формирование промпта пользователя ---
+    user_parts = []
+    user_message_for_db = ""
+    # Этот блок остается без изменений, т.к. его логика корректна
+    if isinstance(prompt, str):
+        user_parts.append({"text": prompt})
+        user_message_for_db = prompt
+    elif isinstance(prompt, list):
+        text_part = ""
+        media_type = None
+        for item in prompt:
+            if isinstance(item, str):
+                text_part = item
+            elif isinstance(item, PIL.Image.Image):
+                media_type = "image"
+                buffered = BytesIO()
+                if item.mode == 'RGBA': item = item.convert('RGB')
+                item.save(buffered, format="JPEG")
+                img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                user_parts.append({"inline_data": {"mime_type": "image/jpeg", "data": img_str}})
+            elif isinstance(item, bytes):
+                media_type = "audio"
+                audio_str = base64.b64encode(item).decode('utf-8')
+                user_parts.append({"inline_data": {"mime_type": "audio/ogg", "data": audio_str}})
+        if text_part:
+            user_parts.append({"text": text_part})
+        user_message_for_db = f"[{media_type or 'media'}] {text_part}".strip()
+    
+    # --- 3. Поиск и внедрение контекста из долговременной памяти (НОВАЯ ЛОГИКА) ---
+    long_term_memory_context = ""
+    if user_message_for_db:
+        # Сначала ищем в "надежных" источниках: документах и сводках
+        reliable_chunks = await vector_store.search_relevant_chunks(
+            active_dialog_id, 
+            user_message_for_db, 
+            n_results=3,
+            metadata_filter={"$or": [{"content_type": "document"}, {"content_type": "summary"}]}
+        )
+        
+        # Затем ищем в общей истории диалога
+        general_chunks = await vector_store.search_relevant_chunks(
+            active_dialog_id, 
+            user_message_for_db, 
+            n_results=2 # Берем меньше, т.к. это менее приоритетная информация
+        )
+        
+        # Объединяем и удаляем дубликаты, сохраняя порядок (сначала надежные)
+        all_chunks = list(dict.fromkeys(reliable_chunks + general_chunks))
+        
+        if all_chunks:
+            context_header = "ВАЖНО: Сначала ищи ответ в предоставленном ниже контексте из долговременной памяти. Используй интернет-поиск только если в этом контексте нет ответа. Контекст из памяти:\n---"
+            formatted_chunks = "\n".join(f"- {chunk}" for chunk in all_chunks)
+            long_term_memory_context = f"{context_header}\n{formatted_chunks}\n---\n"
+
+    # --- 4. Сборка финального запроса к API ---
+    # Эта часть остается без изменений
+    request_contents = list(history)
+    payload = {
+        "generationConfig": GENERATION_CONFIG,
+        "safetySettings": SAFETY_SETTINGS
+    }
+
+    if use_system_instruction:
+        static_system_instruction = await _get_system_instruction_text(user_id, fernet_instance) or ""
+        final_system_instruction = f"{long_term_memory_context}{static_system_instruction}".strip()
+        if final_system_instruction:
+            payload["system_instruction"] = { "parts": [{"text": final_system_instruction}] }
+        request_contents.append({"role": "user", "parts": user_parts})
+    else:
+        if long_term_memory_context:
+            user_parts.insert(0, {"text": long_term_memory_context})
+        request_contents.append({"role": "user", "parts": user_parts})
+
+    payload["contents"] = request_contents
+
+    if use_search:
+        payload.update(GOOGLE_SEARCH_TOOL)
+
+    await db_manager.store_message(user_id, active_dialog_id, 'user', user_message_for_db, fernet_instance, content_type)
+
+    url = f"{GEMINI_API_BASE_URL}/models/{model_name}:generateContent"
+
+    try:
+        response_json = await _make_gemini_request_async(api_key, url, payload)
+        # Блок обработки ответа и сохранения в БД/память остается прежним
+        if not response_json or "candidates" not in response_json:
+            raise GeminiAPIError("Ответ API не содержит 'candidates'.", details=response_json)
+        first_candidate = response_json["candidates"][0]
+        if first_candidate.get("finishReason") == "SAFETY":
+             raise GeminiAPIError("Ответ заблокирован настройками безопасности.", details={"finish_reason": "SAFETY"})
+        response_text = "".join(part.get("text", "") for part in first_candidate["content"]["parts"]).strip()  
+        
+        sources = []
+        metadata = first_candidate.get('groundingMetadata', {})
+        if 'groundingAttributions' in metadata:
+            for attr in metadata['groundingAttributions']:
+                if 'web' in attr and attr['web'].get('uri') and attr['web'].get('title'):
+                    sources.append({"uri": attr['web']['uri'], "title": attr['web']['title']})
+        
+        if not is_gemma_model:
+            history.append({"role": "user", "parts": user_parts})
+            history.append({"role": "model", "parts": [{"text": response_text}]})
+
+        usage_metadata = response_json.get('usageMetadata', {})
+        await db_manager.store_message(
+            user_id=user_id, dialog_id=active_dialog_id, role='bot',
+            message_text=response_text, fernet_instance=fernet_instance,
+            prompt_tokens=usage_metadata.get('promptTokenCount', 0),
+            completion_tokens=usage_metadata.get('candidatesTokenCount', 0), 
+            total_tokens=usage_metadata.get('totalTokenCount', 0)
+        )
+
+        if user_message_for_db and response_text:
+            timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            user_metadata = {"role": "user", "content_type": content_type, "timestamp": timestamp}
+            bot_metadata = {"role": "bot", "content_type": "text", "timestamp": timestamp}
+            asyncio.create_task(vector_store.add_chunk(active_dialog_id, user_message_for_db, user_metadata))
+            asyncio.create_task(vector_store.add_chunk(active_dialog_id, response_text, bot_metadata))
+
+        return response_text, sources
+
+    except GeminiAPIError:
         if history and not is_gemma_model: 
             history.pop()
         raise
@@ -401,10 +605,99 @@ async def validate_api_key(api_key: str) -> bool:
     except GeminiAPIError:
         return False
 
+# File: services/gemini_service.py
+# ...
+        return False
+
+async def summarize_conversation_history(api_key: str, conversation_history: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    Генерирует краткое резюме истории диалога с помощью Gemini API.
+
+    Принимает список словарей с историей сообщений (где message_text уже расшифрован),
+    формирует промпт для Gemini с запросом на суммаризацию и возвращает полученное резюме.
+
+    Args:
+        api_key (str): Google API ключ для доступа к Gemini.
+        conversation_history (List[Dict[str, Any]]): Список словарей, представляющий
+            историю сообщений (с расшифрованным message_text).
+
+    Returns:
+        Optional[str]: Краткое резюме диалога, или None в случае ошибки/отсутствия истории.
+    """
+    if not conversation_history:
+        return None
+
+    # Форматируем историю для промпта
+    formatted_history = []
+    for item in conversation_history:
+        # message_text уже расшифрован
+        message_text = item.get('message_text', '')
+        if not message_text:
+            continue
+
+        role_map = {'user': 'Пользователь', 'bot': 'Ассистент'}
+        formatted_history.append(f"{role_map.get(item['role'], 'Неизвестно')}: {message_text}")
+
+    if not formatted_history:
+        return None
+
+    full_history_text = "\n".join(formatted_history)
+
+    summarization_prompt = f"""
+Проанализируй следующую историю диалога между пользователем и ассистентом.
+Твоя задача - создать краткое, связное резюме всего диалога.
+Фокусируйся на ключевых темах, решениях и основных вопросах, поднятых в беседе.
+Резюме должно быть не более 3-4 предложений.
+
+История диалога:
+---
+{full_history_text}
+---
+
+Резюме:
+"""
+    try:
+        response_json = await _make_gemini_request_async(
+            api_key,
+            f"{GEMINI_API_BASE_URL}/models/{DEFAULT_MODEL_ID}:generateContent",
+            {"contents": [{"role": "user", "parts": [{"text": summarization_prompt}]}]},
+            'POST'
+        )
+        if response_json and "candidates" in response_json and len(response_json["candidates"]) > 0:
+            first_candidate = response_json["candidates"][0]
+            if "content" in first_candidate and "parts" in first_candidate["content"] and len(first_candidate["content"]["parts"]) > 0:
+                summary = first_candidate["content"]["parts"][0].get("text", "").strip()
+                if summary:
+                    return summary
+        gemini_logger.warning(f"Gemini API вернул пустой или некорректный ответ при суммаризации: {response_json}", extra={'user_id': 'System'})
+        return None
+    except GeminiAPIError as e:
+        gemini_logger.error(f"Ошибка при суммаризации истории диалога: {e.details}", extra={'user_id': 'System'})
+        return None
+    except Exception as e:
+        gemini_logger.exception(f"Неожиданная ошибка при суммаризации истории диалога: {e}", extra={'user_id': 'System'})
+        return None
+
 async def get_available_models(api_key: str) -> List[Dict[str, str]]:
-    """Получает список доступных моделей Gemini с API. Выбрасывает GeminiAPIError."""
+    """Получает список доступных моделей Gemini с API. Выбрасывает GeminiAPIError.
+
+    Args:
+        api_key (str): Google API ключ для доступа к Gemini.
+
+    Returns:
+        List[Dict[str, str]]: Список доступных моделей, каждая в виде словаря
+            с ключами 'name' и 'display_name'.
+
+    Raises:
+        GeminiAPIError: Если произошла ошибка при запросе к API Google.
+    """
     url = f"{GEMINI_API_BASE_URL}/models"
     response_json = await _make_gemini_request_async(api_key, url, method='GET')
+
+    # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
+    # gemini_logger.debug(f"Сырой ответ от /models API для get_available_models: {json.dumps(response_json, indent=2)}")
+    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
+
     available_models = []
     if not response_json or 'models' not in response_json:
         return []
@@ -419,4 +712,9 @@ async def get_available_models(api_key: str) -> List[Dict[str, str]]:
             })
 
     available_models.sort(key=lambda x: ('flash' not in x['name'], 'pro' not in x['name'], x['name']))
+
+    # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
+    # gemini_logger.debug(f"Отфильтрованный список доступных моделей: {available_models}")
+    # --- КОНЕЦ ДОБАВЛЕНИЯ ---
+
     return available_models

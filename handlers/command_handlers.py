@@ -216,6 +216,34 @@ async def handle_personal_account_button(message: types.Message, bot: AsyncTeleB
     )
 
 @session_required
+async def handle_archive_memory(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обработчик команды /archive_memory. Начинает процесс архивации старых сообщений.
+
+    Запрашивает у пользователя количество дней, старше которых сообщения
+    должны быть архивированы, и переводит бота в соответствующее состояние.
+
+    Args:
+        message (types.Message): Объект сообщения Telegram.
+        bot (AsyncTeleBot): Экземпляр AsyncTeleBot.
+    """
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
+    if not fernet_instance:
+        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
+        return
+
+    api_key_set = await db_manager.is_api_key_set(user_id)
+    if not api_key_set:
+        await bot.reply_to(message, loc.get_text('api_key_needed_for_feature', lang_code))
+        return
+
+    await bot.set_state(user_id, settings.STATE_WAITING_FOR_ARCHIVE_PERIOD, message.chat.id)
+    await bot.reply_to(message, loc.get_text('memory_archiving_prompt', lang_code), reply_markup=types.ReplyKeyboardRemove())
+
+@session_required
 async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     """Обработчик команды /usage для отображения статистики расходов."""
     user_id = message.from_user.id
@@ -321,6 +349,7 @@ def register_command_handlers(bot: AsyncTeleBot):
     bot.register_message_handler(handle_usage, commands=['usage'], pass_bot=True)
     bot.register_message_handler(handle_dialogs, commands=['dialogs'], pass_bot=True)
     bot.register_message_handler(handle_memorize_file, commands=['memorize', 'memorize_file'], pass_bot=True)
+    bot.register_message_handler(handle_archive_memory, commands=['archive_memory', 'archive'], pass_bot=True) # <-- НОВАЯ КОМАНДА
 
     # Регистрация кнопок-синонимов из оригинального файла
     bot.register_message_handler(handle_dialogs,

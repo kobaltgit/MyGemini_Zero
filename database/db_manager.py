@@ -200,16 +200,14 @@ def setup_database_sync():
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
                 FOREIGN KEY (dialog_id) REFERENCES dialogs(dialog_id) ON DELETE CASCADE
             )""")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_dialog_time ON conversations (dialog_id, timestamp)")
 
-        # --- Таблица user_profiles ---
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                user_id INTEGER PRIMARY KEY,
-                profile_data BLOB NOT NULL,
-                last_updated TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-            )""")
+        # --- Миграция для таблицы conversations ---
+        cursor.execute("PRAGMA table_info(conversations)")
+        conversation_columns = {col['name'] for col in cursor.fetchall()}
+
+        if 'content_type' not in conversation_columns:
+            db_logger.info("Добавляем отсутствующий столбец 'content_type' в 'conversations'...")
+            cursor.execute("ALTER TABLE conversations ADD COLUMN content_type TEXT DEFAULT 'text' NOT NULL")
 
         conn.commit()
         db_logger.info("Проверка и настройка базы данных завершена.")
@@ -219,6 +217,7 @@ def setup_database_sync():
         raise
     finally:
         if conn: conn.close()
+
 
 async def set_user_api_key(user_id: int, api_key: str, fernet_instance: Fernet):
     """Шифрует и сохраняет API-ключ пользователя."""
@@ -316,25 +315,35 @@ async def get_user_salt(user_id: int) -> Optional[bytes]:
 
 async def store_message(user_id: int, dialog_id: int, role: str, message_text: str,
                         fernet_instance: Fernet, prompt_tokens: int = 0,
-                        completion_tokens: int = 0, total_tokens: int = 0):
+                        completion_tokens: int = 0, total_tokens: int = 0,
+                        content_type: str = 'text'): # <--- ДОБАВЛЕН НОВЫЙ АРГУМЕНТ
     """
     Шифрует и сохраняет сообщение в базу данных.
 
     Args:
+        user_id (int): ID пользователя.
+        dialog_id (int): ID активного диалога.
+        role (str): Роль отправителя ('user' или 'bot').
+        message_text (str): Текст сообщения.
         fernet_instance (Fernet): Экземпляр Fernet, инициализированный ключом сессии.
+        prompt_tokens (int): Количество токенов во входном запросе.
+        completion_tokens (int): Количество токенов в сгенерированном ответе.
+        total_tokens (int): Общее количество токенов.
+        content_type (str): Тип содержимого сообщения (например, 'text', 'photo', 'voice', 'document').
     """
     if role not in ('user', 'bot'): return
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
+
     encrypted_text = crypto_helpers.encrypt_data(message_text, fernet_instance)
-    
+
     query = """
         INSERT INTO conversations 
-        (user_id, dialog_id, timestamp, role, message_text, prompt_tokens, completion_tokens, total_tokens) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, dialog_id, timestamp, role, message_text, prompt_tokens, completion_tokens, total_tokens, content_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
-    params = (user_id, dialog_id, timestamp, role, encrypted_text, prompt_tokens, completion_tokens, total_tokens)
+    params = (user_id, dialog_id, timestamp, role, encrypted_text, prompt_tokens, completion_tokens, total_tokens, content_type)
     await _execute_query(query, params, is_write_operation=True)
+
 
 
 async def get_conversation_history(dialog_id: int, fernet_instance: Fernet, limit: int = 20) -> List[Dict[str, Any]]:
