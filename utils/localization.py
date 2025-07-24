@@ -35,6 +35,14 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'zk_unlock_success': "✅ Память успешно разблокирована!",
         'zk_user_is_locked': "Ваша сессия заблокирована. Пожалуйста, введите мастер-пароль для продолжения.",
 
+        'panic_password_prompt': "🔐 **Установка пароля паники (опционально)**\n\nВы можете установить второй, *пароль паники*. Если вы введете его вместо основного пароля для разблокировки, вся ваша история сообщений и память будут **немедленно и безвозвратно удалены**, но бот сделает вид, что это была обычная разблокировка.\n\nЭто функция для экстренных случаев, обеспечивающая правдоподобное отрицание. Вы хотите установить пароль паники сейчас?",
+        'panic_password_ask': "Отлично. Придумайте и введите ваш **пароль паники**.\n\n**Важно:** он *не должен* совпадать с вашим основным мастер-паролем.",
+        'panic_password_confirm_ask': "Пожалуйста, введите пароль паники еще раз для подтверждения.",
+        'panic_password_mismatch': "❌ Пароли паники не совпадают. Попробуйте еще раз.",
+        'panic_password_same_as_master': "❌ Пароль паники не может совпадать с вашим основным паролем. Придумайте другой.",
+        'panic_password_set_success': "✅ Пароль паники успешно установлен.",
+        'panic_password_setup_skipped': "Хорошо, вы всегда сможете настроить его позже.",
+
         # --- НОВЫЙ РАЗДЕЛ: Анкета профиля ---
         'profile_start': "👋 **Давайте познакомимся!**\n\nЯ ваш персональный ИИ-ассистент. Чтобы наше общение было максимально продуктивным, я могу запомнить ключевую информацию о вас. Это как ввести в курс дел нового сотрудника.\n\n🔒 *Напоминаю: вся эта информация будет зашифрована вашим мастер-паролем и сохранится в вашей персональной памяти.*\n\nВы можете пропустить любой вопрос, просто отправив «-» или команду `/skip`.",
         'profile_q_role': "**1/8. Ваша роль или профессия?**\n*Например: разработчик, менеджер проектов, студент, предприниматель.*",
@@ -45,7 +53,7 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'profile_q_style': "**6/8. Какой стиль общения вы предпочитаете?**",
         'profile_q_hobby': "**7/8. Чем вы увлекаетесь в свободное время? Какие у вас хобби?**\n*Например: шахматы, путешествия, научная фантастика.*",
         'profile_q_rules': "**8/8. Есть ли темы, которые мне следует избегать, или \"золотое правило\", которое я всегда должен соблюдать?**\n*Например: \"Никогда не давать финансовых советов\", \"Всегда предлагать несколько вариантов\".*",
-        'profile_end': "✅ **Отлично, настройка завершена!**\n\nЯ сохранил эту информацию в вашу персональную память. Вы всегда можете просмотреть и изменить этот профиль с помощью команды `/profile`.\n\n**Давайте попробуем! Задайте мне любой вопрос.**",
+        'profile_end': "✅ **Отлично, настройка завершена!**\n\nЯ сохранил эту информацию в вашу персональную память. Вы всегда можете просмотреть и изменить этот профиль с помощью команды `/profile`.\n\n**Двигаемся дальше.**",
         
         # --- НОВЫЙ РАЗДЕЛ: Кнопки для анкеты ---
         'profile_btn_purpose_work': "Помощь в работе",
@@ -83,6 +91,7 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'settings_btn_choose_model': "🧠 Выбрать модель",
         'settings_persona_section': "--- Роль ассистента (Персона) ---",
         'settings_btn_choose_persona': "🎭 Выбрать персону",
+        'settings_btn_data_management': "🗄️ Управление данными",
         'style_changed_notice': "Стиль общения изменен. Контекст диалога сброшен.",
         'persona_changed_notice': "✅ Персона изменена на *{persona_name}*. Контекст диалога сброшен.",
         # --- Выбор модели ---
@@ -134,6 +143,17 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'memory_archiving_done': "✅ Архивация памяти завершена! За этот период было сжато {summarized_periods} фрагментов истории.",
         'memory_archiving_error': "❌ Произошла ошибка во время архивации памяти. Пожалуйста, попробуйте позже.",
         'memory_archiving_error_api_key': "Для архивации памяти необходим API ключ.",
+
+         # --- НОВЫЙ РАЗДЕЛ: Управление данными ---
+        'data_management_title': "🗄️ *Управление данными*",
+        'data_management_desc': "Здесь вы можете управлять своей долговременной памятью. Эти действия могут быть необратимы.",
+        'btn_archive_memory': "🗜️ Архивировать старую память",
+        'btn_clear_data': "🗑️ Стереть всю память",
+        'clear_data_confirm_prompt': "Вы уверены, что хотите **полностью и безвозвратно** удалить всю историю сообщений и содержимое долговременной памяти во **всех ваших диалогах**?\n\nВаш профиль, API-ключ и мастер-пароль останутся. Это действие нельзя будет отменить.",
+        'btn_confirm_clear': "Да, стереть всё",
+        'btn_cancel_clear': "Отмена",
+        'clear_data_success': "✅ Вся история ваших сообщений и память были успешно удалены.",
+        'clear_data_cancelled': "Действие отменено.",
 
         'set_api_key_prompt': "Пожалуйста, отправьте ваш Google AI API ключ. Сообщение с ключом будет удалено.",
         'history_prompt': "🗓️ Пожалуйста, выберите дату для просмотра истории текущего диалога:",
@@ -276,6 +296,14 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'zk_unlock_fail': "❌ Incorrect password. Please try again.",
         'zk_unlock_success': "✅ Memory successfully unlocked!",
         'zk_user_is_locked': "Your session is locked. Please enter your master password to continue.",
+
+        'panic_password_prompt': "🔐 **Set Panic Password (Optional)**\n\nYou can set a second, *panic password*. If you enter it instead of your main password to unlock, all your message history and memory will be **immediately and irreversibly deleted**, but the bot will pretend it was a normal unlock.\n\nThis is a feature for emergencies, providing plausible deniability. Do you want to set a panic password now?",
+        'panic_password_ask': "Great. Please create and enter your **panic password**.\n\n**Important:** it *must not* be the same as your main master password.",
+        'panic_password_confirm_ask': "Please enter the panic password again to confirm.",
+        'panic_password_mismatch': "❌ The panic passwords do not match. Please try again.",
+        'panic_password_same_as_master': "❌ The panic password cannot be the same as your master password. Please choose another one.",
+        'panic_password_set_success': "✅ Panic password has been successfully set.",
+        'panic_password_setup_skipped': "Alright, you can always set it up later.",
         
         # --- NEW SECTION: Profile Questionnaire ---
         'profile_start': "👋 **Let's get acquainted!**\n\nI am your personal AI assistant. To make our communication as productive as possible, I can remember key information about you. It's like briefing a new employee.\n\n🔒 *Reminder: All this information will be encrypted with your master password and stored in your personal memory.*\n\nYou can skip any question by simply sending \"-\" or the `/skip` command.",
@@ -287,7 +315,7 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'profile_q_style': "**6/8. What communication style do you prefer?**",
         'profile_q_hobby': "**7/8. What are your hobbies or interests in your free time?**\n*E.g., chess, traveling, science fiction.*",
         'profile_q_rules': "**8/8. Are there any topics I should avoid, or a \"golden rule\" I should always follow?**\n*E.g., \"Never give financial advice,\" \"Always offer several options.\"*",
-        'profile_end': "✅ **Great, setup is complete!**\n\nI have saved this information to your personal memory. You can always view and change this profile using the `/profile` command.\n\n**Let's give it a try! Ask me any question.**",
+        'profile_end': "✅ **Great, setup is complete!**\n\nI have saved this information to your personal memory. You can always view and change this profile using the `/profile` command.\n\n**Moving on.**",
         
         # --- NEW SECTION: Buttons for questionnaire ---
         'profile_btn_purpose_work': "Help with work",
@@ -325,6 +353,8 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'settings_btn_choose_model': "🧠 Choose Model",
         'settings_persona_section': "--- Assistant's Role (Persona) ---",
         'settings_btn_choose_persona': "🎭 Choose Persona",
+        'settings_btn_data_management': "🗄️ Data Management",
+
         'style_changed_notice': "Communication style changed. The conversation context has been reset.",
         'persona_changed_notice': "✅ Persona changed to *{persona_name}*. The conversation context has been reset.",
         # --- Model Selection ---
@@ -376,6 +406,17 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'memory_archiving_done': "✅ Memory archiving complete! {summarized_periods} history segments were compressed during this period.",
         'memory_archiving_error': "❌ An error occurred during memory archiving. Please try again later.",
         'memory_archiving_error_api_key': "An API key is required for memory archiving.",
+
+        # --- NEW SECTION: Data Management ---
+        'data_management_title': "🗄️ *Data Management*",
+        'data_management_desc': "Here you can manage your long-term memory. These actions can be irreversible.",
+        'btn_archive_memory': "🗜️ Archive Old Memory",
+        'btn_clear_data': "🗑️ Erase All Memory",
+        'clear_data_confirm_prompt': "Are you sure you want to **completely and irreversibly** delete all message history and long-term memory content in **all of your dialogs**?\n\nYour profile, API key, and master password will remain. This action cannot be undone.",
+        'btn_confirm_clear': "Yes, erase all",
+        'btn_cancel_clear': "Cancel",
+        'clear_data_success': "✅ All your message history and memory have been successfully erased.",
+        'clear_data_cancelled': "Action cancelled.",
 
         'set_api_key_prompt': "Please send your Google AI API key. The message with the key will be deleted.",
         'history_prompt': "🗓️ Please select a date to view the history of the current dialog:",

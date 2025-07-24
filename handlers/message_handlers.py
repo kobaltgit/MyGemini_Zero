@@ -18,7 +18,6 @@
 """
 Центральный модуль для обработки сообщений от пользователя.
 Здесь реализована явная маршрутизация на основе состояний.
-(ZK Edition - Corrected)
 """
 import datetime
 import PIL.Image
@@ -39,7 +38,8 @@ from config.settings import (
     STATE_WAITING_FOR_NEW_DIALOG_NAME, STATE_WAITING_FOR_RENAME_DIALOG,
     STATE_WAITING_FOR_FEEDBACK, DEFAULT_MODEL_ID, BOT_PERSONAS, ADMIN_USER_ID,
     STATE_ADMIN_WAITING_FOR_BROADCAST_MSG, STATE_ADMIN_WAITING_FOR_USER_ID_TO_MANAGE,
-    STATE_ADMIN_WAITING_FOR_USER_ID_TO_REPLY, STATE_ADMIN_WAITING_FOR_REPLY_MESSAGE
+    STATE_ADMIN_WAITING_FOR_USER_ID_TO_REPLY, STATE_ADMIN_WAITING_FOR_REPLY_MESSAGE,
+    STATE_ZK_WAITING_FOR_PANIC_SETUP, STATE_ZK_WAITING_FOR_PANIC_CONFIRM
 )
 from database import db_manager
 from services import gemini_service
@@ -48,7 +48,8 @@ from services.vector_store_manager import VectorStoreManager
 from features import profile_manager
 from features.profile_manager import QUESTIONNAIRE, ask_question
 from .decorators import admin_required
-from .admin_handlers import handle_admin_command
+from handlers.callback_handlers import handle_callback_query
+
 
 from logger_config import get_logger
 
@@ -56,7 +57,6 @@ logger = get_logger(__name__)
 user_logger = get_logger('user_messages')
 
 # --- СПИСОК ВСЕХ КНОПОК ДЛЯ ИСКЛЮЧЕНИЯ ИЗ УНИВЕРСАЛЬНОГО ОБРАБОТЧИКА ---
-# Собираем тексты всех кнопок на всех языках, чтобы роутер их игнорировал
 BUTTON_KEYS = [
     'btn_dialogs', 'btn_account', 'btn_usage', 'btn_settings',
     'btn_translate', 'btn_history', 'btn_help', 'btn_reset', 'btn_admin_panel'
@@ -69,7 +69,7 @@ ALL_BUTTON_TEXTS = {
 }
 
 # ===================================================================================
-# --- ВНУТРЕННИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ) ---
+# --- ВНУТРЕННИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 # ===================================================================================
 
 async def _check_access(bot: AsyncTeleBot, user_id: int, lang_code: str) -> bool:
@@ -126,13 +126,9 @@ async def _create_context_header(user_id: int, lang_code: str) -> str:
 # --- ОБРАБОТЧИКИ СОСТОЯНИЙ (STATE) ---
 # ===================================================================================
 
-# --- НОВЫЕ ОБРАБОТЧИКИ СОСТОЯНИЙ ДЛЯ ZERO-KNOWLEDGE ---
 async def _handle_state_password_setup(message: types.Message, bot: AsyncTeleBot):
     """
     Обрабатывает ввод первого мастер-пароля при первичной настройке Zero-Knowledge.
-
-    Сохраняет введенный пароль во временное хранилище состояния и переводит
-    пользователя в состояние ожидания подтверждения пароля.
 
     Args:
         message (types.Message): Объект сообщения Telegram, содержащий введенный пароль.
@@ -148,15 +144,10 @@ async def _handle_state_password_setup(message: types.Message, bot: AsyncTeleBot
 
 async def _handle_state_password_confirm(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает подтверждение мастер-пароля.
-
-    Сравнивает введенный пароль с ранее сохраненным. Если пароли совпадают,
-    генерирует соль, хеширует пароль, сохраняет их в БД, создает экземпляр Fernet
-    для сессии пользователя и запускает процесс заполнения анкеты профиля.
-    В случае несовпадения паролей, просит пользователя начать процесс сначала.
+    Обрабатывает подтверждение мастер-пароля, сохраняет его и запускает анкетирование.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий подтверждающий пароль.
+        message (types.Message): Объект сообщения Telegram, содержащий подтверждение пароля.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
@@ -167,26 +158,24 @@ async def _handle_state_password_confirm(message: types.Message, bot: AsyncTeleB
         password_one = data.get('password_one')
 
     if password_one == password_two:
-        # 1. Сохраняем хеш и соль в БД
         await db_manager.set_master_password(user_id, password_one)
 
-        # 2. Создаем и сохраняем живую сессию (ключ шифрования)
         salt = await db_manager.get_user_salt(user_id)
         if salt:
             fernet_instance = crypto_helpers.get_fernet_instance(password_one, salt)
             tg_helpers.user_session_keys[user_id] = fernet_instance
-            logger.info(f"Сессия для нового пользователя {user_id} создана и разблокирована после установки пароля.")
+            logger.info(f"Сессия для нового пользователя {user_id} создана после установки пароля.", extra={'user_id': str(user_id)})
         else:
-            logger.error(f"Критическая ошибка: не удалось получить соль для user_id {user_id} сразу после установки пароля.")
+            logger.error(f"Критическая ошибка: не удалось получить соль для user_id {user_id} после установки пароля.", extra={'user_id': str(user_id)})
             await bot.send_message(user_id, "Произошла критическая ошибка. Свяжитесь с администратором.")
             return
 
-        # 3. Удаляем состояние и начинаем анкету
         await bot.delete_state(user_id, message.chat.id)
         await bot.send_message(user_id, loc.get_text('zk_setup_success', lang_code))
+
+        # Сразу начинаем анкетирование после установки пароля
         await profile_manager.start_questionnaire(bot, message)
     else:
-        # Если пароли не совпали, начинаем процесс заново
         await bot.set_state(user_id, settings.STATE_ZK_WAITING_FOR_PASSWORD_SETUP, message.chat.id)
         await bot.send_message(user_id, loc.get_text('zk_password_mismatch', lang_code))
         await bot.send_message(user_id, loc.get_text('zk_setup_prompt', lang_code))
@@ -194,41 +183,115 @@ async def _handle_state_password_confirm(message: types.Message, bot: AsyncTeleB
 
 async def _handle_state_password_unlock(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод мастер-пароля для разблокировки сессии пользователя.
-
-    Проверяет введенный пароль. В случае успеха, извлекает соль из БД,
-    создает и сохраняет экземпляр Fernet для текущей сессии пользователя,
-    обновляет время последней активности и сбрасывает состояние.
-    В случае неверного пароля, информирует пользователя.
+    Обрабатывает ввод пароля для разблокировки сессии.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий пароль для разблокировки.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     password = message.text.strip()
-    if await db_manager.verify_master_password(user_id, password):
+    
+    pending_callback_data = None
+    async with bot.retrieve_data(user_id, message.chat.id) as data:
+        pending_callback_data = data.get('pending_callback_data')
+
+    is_panic = await db_manager.verify_panic_password(user_id, password)
+    if is_panic:
+        logger.warning(f"!!! Сработал ПАРОЛЬ ПАНИКИ для пользователя {user_id} !!!", extra={'user_id': str(user_id)})
+        salt = await db_manager.get_user_salt(user_id)
+        fernet_instance_for_panic = crypto_helpers.get_fernet_instance(password, salt) if salt else None
+        await db_manager.clear_user_content(user_id, fernet_instance_for_panic)
+
+        await bot.delete_state(user_id, message.chat.id)
+        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+        await bot.send_message(user_id, loc.get_text('zk_unlock_success', lang_code), reply_markup=main_keyboard)
+        return
+
+    is_master = await db_manager.verify_master_password(user_id, password)
+    if is_master:
         salt = await db_manager.get_user_salt(user_id)
         fernet_instance = crypto_helpers.get_fernet_instance(password, salt)
         tg_helpers.user_session_keys[user_id] = fernet_instance
         await db_manager.update_last_session_time(user_id)
         await bot.delete_state(user_id, message.chat.id)
-        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
-        await bot.send_message(user_id, loc.get_text('zk_unlock_success', lang_code), reply_markup=main_keyboard)
+
+        if pending_callback_data:
+            logger.info(f"Сессия для {user_id} разблокирована. Выполняется отложенное действие: {pending_callback_data}", extra={'user_id': str(user_id)})
+            fake_call = types.CallbackQuery(
+                id=str(message.message_id),
+                from_user=message.from_user,
+                data=pending_callback_data,
+                chat_instance=str(message.chat.id),
+                json_string="",
+                message=message
+            )
+            await handle_callback_query(fake_call, bot)
+        else:
+            main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+            await bot.send_message(user_id, loc.get_text('zk_unlock_success', lang_code), reply_markup=main_keyboard)
     else:
         await bot.send_message(user_id, loc.get_text('zk_unlock_fail', lang_code))
 
-async def _handle_state_profile_answer(message: types.Message, bot: AsyncTeleBot):
-    """
-    Обрабатывает текстовые ответы пользователя во время заполнения анкеты профиля.
 
-    Сохраняет ответ в словарь `current_profile` в состоянии пользователя.
-    Определяет следующий вопрос и задает его, или завершает анкету,
-    сохраняя профиль в зашифрованном виде в БД.
+async def _handle_state_panic_password_setup(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обрабатывает первый ввод пароля паники.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий ответ пользователя.
+        message (types.Message): Объект сообщения Telegram.
+        bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
+    """
+    user_id = message.from_user.id
+    password = message.text.strip()
+    lang_code = await db_manager.get_user_language(user_id)
+
+    is_master_match = await db_manager.verify_master_password(user_id, password)
+    if is_master_match:
+        await bot.reply_to(message, loc.get_text('panic_password_same_as_master', lang_code))
+        return
+
+    await bot.add_data(user_id, message.chat.id, panic_password_one=password)
+    await bot.set_state(user_id, STATE_ZK_WAITING_FOR_PANIC_CONFIRM, message.chat.id)
+    await bot.send_message(user_id, loc.get_text('panic_password_confirm_ask', lang_code))
+
+
+async def _handle_state_panic_password_confirm(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обрабатывает подтверждение пароля паники и завершает настройку.
+
+    Args:
+        message (types.Message): Объект сообщения Telegram, содержащий подтверждение пароля.
+        bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
+    """
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    password_two = message.text.strip()
+
+    async with bot.retrieve_data(user_id, message.chat.id) as data:
+        password_one = data.get('panic_password_one')
+
+    if password_one == password_two:
+        await db_manager.set_panic_password(user_id, password_one)
+        await bot.delete_state(user_id, message.chat.id)
+        await bot.send_message(user_id, loc.get_text('panic_password_set_success', lang_code))
+        
+        # Так как анкета уже пройдена, просто показываем основную клавиатуру
+        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+        await bot.send_message(user_id, "Настройка завершена! Можете начинать работу.", reply_markup=main_keyboard)
+    else:
+        await bot.set_state(user_id, STATE_ZK_WAITING_FOR_PANIC_SETUP, message.chat.id)
+        await bot.send_message(user_id, loc.get_text('panic_password_mismatch', lang_code))
+        await bot.send_message(user_id, loc.get_text('panic_password_ask', lang_code))
+
+
+async def _handle_state_profile_answer(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обрабатывает текстовые ответы пользователя во время заполнения анкеты.
+
+    Args:
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
@@ -241,41 +304,39 @@ async def _handle_state_profile_answer(message: types.Message, bot: AsyncTeleBot
         if not current_question_key:
             await bot.delete_state(user_id, message.chat.id)
             return
-        # Сохраняем ответ
+        
         current_profile[current_question_key] = answer
         
-        # Определяем следующий вопрос
         next_question_key = QUESTIONNAIRE.get(current_question_key, {}).get('next')
         if next_question_key:
-            # Обновляем состояние, чтобы бот знал, какой вопрос следующий
             data['current_question'] = next_question_key
-            # Задаем следующий вопрос
             await ask_question(bot, user_id, next_question_key)
         else:
-            # Анкета завершена
+            # Анкета завершена, сохраняем профиль
             lang_code = await db_manager.get_user_language(user_id)
             fernet_instance = tg_helpers.user_session_keys.get(user_id)
             if fernet_instance:
                 await db_manager.save_user_profile(user_id, current_profile, fernet_instance)
             else:
-                logger.error(f"Не найдена сессия для сохранения профиля пользователя {user_id}")
+                logger.error(f"Не найдена сессия для сохранения профиля пользователя {user_id}", extra={'user_id': str(user_id)})
           
-            logger.info(f"Анкета для пользователя {user_id} завершена. Профиль: {current_profile}")
-            await bot.delete_state(user_id, message.chat.id)
+            logger.info(f"Анкета для пользователя {user_id} завершена. Профиль: {current_profile}", extra={'user_id': str(user_id)})
             await bot.send_message(user_id, loc.get_text('profile_end', lang_code))
 
-# --- ОРИГИНАЛЬНЫЕ ОБРАБОТЧИКИ СОСТОЯНИЙ (с минимальными адаптациями) ---
+            # Теперь предлагаем установить пароль паники
+            panic_kbd = mk.create_panic_password_setup_keyboard(lang_code)
+            await bot.send_message(user_id, loc.get_text('panic_password_prompt', lang_code), reply_markup=panic_kbd)
+            
+            # Сбрасываем состояние, чтобы пользователь мог нажать на inline-кнопки
+            await bot.delete_state(user_id, message.chat.id)
 
 @admin_required
 async def _handle_state_admin_broadcast(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод сообщения для рассылки всем пользователям.
-
-    Сохраняет текст сообщения в состояние администратора и запрашивает
-    подтверждение перед отправкой рассылки.
+    Обрабатывает ввод сообщения для рассылки.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий текст для рассылки.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
@@ -291,14 +352,10 @@ async def _handle_state_admin_broadcast(message: types.Message, bot: AsyncTeleBo
 @admin_required
 async def _handle_state_admin_user_id_manage(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод User ID для управления пользователем в админ-панели.
-
-    После получения User ID, сбрасывает состояние администратора и отображает
-    информацию о пользователе вместе с клавиатурой для управления им (блокировка,
-    сброс API ключа).
+    Обрабатывает ввод User ID для управления.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий User ID.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     admin_id = message.from_user.id
@@ -316,14 +373,10 @@ async def _handle_state_admin_user_id_manage(message: types.Message, bot: AsyncT
 @admin_required
 async def _handle_state_user_id_for_reply(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод User ID пользователя, которому администратор хочет ответить.
-
-    Проверяет существование пользователя. Если пользователь найден, сохраняет
-    его ID во временное хранилище состояния и переводит администратора в
-    состояние ожидания сообщения для отправки.
+    Обрабатывает ввод User ID для ответа.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий User ID.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     admin_id = message.from_user.id
@@ -343,13 +396,10 @@ async def _handle_state_user_id_for_reply(message: types.Message, bot: AsyncTele
 @admin_required
 async def _handle_state_message_to_user(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод сообщения от администратора для конкретного пользователя.
-
-    Извлекает User ID из состояния и отправляет введенное сообщение целевому
-    пользователю, после чего сбрасывает состояние администратора.
+    Обрабатывает ввод сообщения для отправки пользователю.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий текст для пользователя.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     admin_id = message.from_user.id
@@ -372,15 +422,10 @@ async def _handle_state_message_to_user(message: types.Message, bot: AsyncTeleBo
 
 async def _handle_state_api_key(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает ввод Google AI API ключа от пользователя.
-
-    Проверяет валидность ключа через Gemini API. Если ключ действителен,
-    шифрует его с помощью сессионного ключа Fernet и сохраняет в БД,
-    затем сбрасывает состояние. В противном случае информирует пользователя
-    о недействительности ключа.
+    Обрабатывает ввод Google AI API ключа.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий API ключ.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.chat.id
@@ -410,12 +455,8 @@ async def _handle_state_translate(message: types.Message, bot: AsyncTeleBot):
     """
     Обрабатывает ввод текста для перевода.
 
-    Извлекает целевой язык из состояния, получает API ключ пользователя (расшифровывая его),
-    вызывает Gemini API для перевода и отправляет результат пользователю.
-    В случае ошибки или отсутствия API ключа, уведомляет пользователя.
-
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий текст для перевода.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.chat.id
@@ -455,11 +496,8 @@ async def _handle_state_new_dialog_name(message: types.Message, bot: AsyncTeleBo
     """
     Обрабатывает ввод нового названия для диалога.
 
-    Создает новый диалог с указанным названием, делает его активным
-    для пользователя и сбрасывает состояние.
-
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий новое имя диалога.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.chat.id
@@ -478,10 +516,8 @@ async def _handle_state_rename_dialog(message: types.Message, bot: AsyncTeleBot)
     """
     Обрабатывает ввод нового названия для переименовываемого диалога.
 
-    Переименовывает диалог в базе данных и сбрасывает состояние.
-
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий новое имя диалога.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.chat.id
@@ -501,13 +537,10 @@ async def _handle_state_rename_dialog(message: types.Message, bot: AsyncTeleBot)
 
 async def _handle_state_feedback(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает сообщение обратной связи от пользователя.
-
-    Сбрасывает состояние пользователя, отправляет ему подтверждение
-    и пересылает сообщение администратору (если ADMIN_USER_ID задан).
+    Обрабатывает сообщение обратной связи.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий обратную связь.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.chat.id
@@ -526,7 +559,7 @@ async def _handle_state_feedback(message: types.Message, bot: AsyncTeleBot):
                 user_id=user_id,
                 username=username,
                 first_name=first_name,
-                text=f"```{user_text}```" # Оборачиваем в блок кода
+                text=f"```{user_text}```"
             )
             await bot.send_message(ADMIN_USER_ID, telegramify_markdown.markdownify(admin_notification), parse_mode='MarkdownV2')
         except Exception as e:
@@ -534,21 +567,16 @@ async def _handle_state_feedback(message: types.Message, bot: AsyncTeleBot):
 
 async def _handle_state_document_memorize(message: types.Message, bot: AsyncTeleBot):
     """
-    Обрабатывает загрузку файла (документа) для добавления в долговременную память.
-
-    Проверяет тип и размер файла, скачивает его, извлекает текст
-    и добавляет его в векторное хранилище, связанное с активным диалогом пользователя.
-    В случае успеха или неудачи уведомляет пользователя.
+    Обрабатывает загрузку файла для добавления в долговременную память.
 
     Args:
-        message (types.Message): Объект сообщения Telegram, содержащий загруженный документ.
+        message (types.Message): Объект сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     main_keyboard = mk.create_main_keyboard(lang_code, user_id)
 
-    # 1. Проверяем, что прислали именно документ
     if message.content_type != 'document':
         await bot.reply_to(message, loc.get_text('memory_file_error_type', lang_code), reply_markup=main_keyboard)
         await bot.delete_state(user_id, message.chat.id)
@@ -557,13 +585,11 @@ async def _handle_state_document_memorize(message: types.Message, bot: AsyncTele
     doc = message.document
     file_name = doc.file_name or "document"
     
-    # 2. Проверяем расширение файла
     if not (file_name.lower().endswith('.txt') or file_name.lower().endswith('.md')):
         await bot.reply_to(message, loc.get_text('memory_file_error_type', lang_code), reply_markup=main_keyboard)
         await bot.delete_state(user_id, message.chat.id)
         return
 
-    # 3. Проверяем размер файла (1 MB limit)
     if doc.file_size > 1024 * 1024:
         await bot.reply_to(message, loc.get_text('memory_file_error_size', lang_code), reply_markup=main_keyboard)
         await bot.delete_state(user_id, message.chat.id)
@@ -572,7 +598,6 @@ async def _handle_state_document_memorize(message: types.Message, bot: AsyncTele
     status_msg = await bot.reply_to(message, loc.get_text('memory_file_processing', lang_code))
 
     try:
-        # 4. Скачиваем и читаем файл
         file_info = await bot.get_file(doc.file_id)
         downloaded_file = await bot.download_file(file_info.file_path)
         
@@ -583,7 +608,6 @@ async def _handle_state_document_memorize(message: types.Message, bot: AsyncTele
             await bot.delete_state(user_id, message.chat.id)
             return
 
-        # 5. Интеграция с VectorStoreManager
         fernet_instance = tg_helpers.user_session_keys.get(user_id)
         api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
         active_dialog_id = await db_manager.get_active_dialog_id(user_id)
@@ -593,18 +617,16 @@ async def _handle_state_document_memorize(message: types.Message, bot: AsyncTele
 
         vector_store = VectorStoreManager(api_key=api_key)
 
-        # Формируем метаданные для документа
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         metadata = {
             "role": "user",
             "content_type": "document",
             "timestamp": timestamp,
             "user_id": user_id,
-            "dialog_id": active_dialog_id # Добавляем dialog_id для удобства фильтрации в будущем
+            "dialog_id": active_dialog_id
         }
-        await vector_store.add_chunk(active_dialog_id, file_content, metadata) # <-- Изменен вызов и добавлены метаданные
+        await vector_store.add_chunk(active_dialog_id, file_content, metadata)
 
-        # 6. Сообщаем об успехе
         dialog_info = await db_manager.get_user_context_info(user_id)
         dialog_name = dialog_info.get('dialog_name', 'текущего') if dialog_info else 'текущего'
         success_text = loc.get_text('memory_file_success', lang_code).format(file_name=file_name, dialog_name=dialog_name)
@@ -627,197 +649,102 @@ async def _handle_state_archive_period(message: types.Message, bot: AsyncTeleBot
 
     Args:
         message (types.Message): Объект сообщения Telegram, содержащий количество дней.
-        bot (AsyncTeleBot): Экземпляр AsyncTeleBot.
+        bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
+    
+    # Сессия уже должна быть активна. Делаем проверку на всякий случай.
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+        return
+
     main_keyboard = mk.create_main_keyboard(lang_code, user_id)
 
     try:
         days_to_archive = int(message.text.strip())
         if days_to_archive <= 0:
-            raise ValueError("Period must be a positive number.")
+            raise ValueError("Период должен быть положительным числом.")
     except ValueError:
         await bot.reply_to(message, loc.get_text('memory_archiving_invalid_period', lang_code))
-        return
-
+        return # Остаемся в том же состоянии, чтобы пользователь попробовал снова
+        
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
-    if not fernet_instance:
-        await bot.reply_to(message, "Критическая ошибка: сессия не найдена для архивации.")
-        return
-
     api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
+
     if not api_key:
-        await bot.reply_to(message, loc.get_text('memory_archiving_error_api_key', lang_code))
+        await bot.reply_to(message, loc.get_text('memory_archiving_error_api_key', lang_code), reply_markup=main_keyboard)
         await bot.delete_state(user_id, message.chat.id)
         return
 
     active_dialog_id = await db_manager.get_active_dialog_id(user_id)
     if not active_dialog_id:
-        await bot.reply_to(message, loc.get_text('dialog_error_no_active', lang_code))
-        await bot.delete_state(user_id, message.chat.id)
-        return
-
-    # Получаем всю историю сообщений для активного диалога (пока без ограничения по дате, будем фильтровать ниже)
-    all_history = await db_manager.get_conversation_history(active_dialog_id, fernet_instance, limit=999999) 
-
-    if not all_history:
-        await bot.reply_to(message, loc.get_text('memory_archiving_no_old_messages', lang_code).format(days=days_to_archive))
-        await bot.delete_state(user_id, message.chat.id)
-        return
-
-    # Группируем сообщения по дням
-    messages_by_date = {}
-    for msg in all_history:
-        # timestamp в БД хранится в ISO формате. Преобразуем его в объект datetime.
-        try:
-            msg_dt = datetime.fromisoformat(msg['timestamp']).replace(tzinfo=None) # Убираем tzinfo для сравнения с datetime.now().date()
-        except ValueError:
-            logger.error(f"Некорректный формат timestamp в БД: {msg['timestamp']}", extra={'user_id': str(user_id)})
-            continue # Пропускаем некорректные записи
-
-        msg_date = msg_dt.date()
-        messages_by_date.setdefault(msg_date, []).append(msg)
-
-    # Определяем дату отсечения
-    cutoff_date = datetime.now().date() - datetime.timedelta(days=days_to_archive)
-
-    periods_to_summarize = []
-    # Собираем периоды для суммаризации
-    sorted_dates = sorted(messages_by_date.keys())
-
-    current_period_messages = []
-    current_period_start_date = None
-
-    for date in sorted_dates:
-        if date < cutoff_date:
-            # Все сообщения до cutoff_date группируем в периоды для суммаризации
-            if not current_period_start_date:
-                current_period_start_date = date
-
-            current_period_messages.extend(messages_by_date[date])
-
-            # Если это последний день в списке или следующий день - это cutoff_date,
-            # или если дата не является последовательной, закрываем период.
-            if date == sorted_dates[-1] or (date + datetime.timedelta(days=1)) not in messages_by_date or \
-               (date + datetime.timedelta(days=1)) >= cutoff_date:
-
-                # Добавляем период для суммаризации, если в нем есть сообщения
-                if current_period_messages:
-                    # Сортируем сообщения в периоде по времени для корректной суммаризации
-                    current_period_messages.sort(key=lambda x: datetime.fromisoformat(x['timestamp']).replace(tzinfo=None))
-                    periods_to_summarize.append({
-                        'messages': current_period_messages,
-                        'start_date': current_period_start_date,
-                        'end_date': date
-                    })
-                current_period_messages = []
-                current_period_start_date = None
-        else:
-            # Сообщения после cutoff_date не архивируются
-            break
-
-    if not periods_to_summarize:
-        await bot.reply_to(message, loc.get_text('memory_archiving_no_old_messages', lang_code).format(days=days_to_archive))
+        await bot.reply_to(message, "Ошибка: не найден активный диалог.", reply_markup=main_keyboard)
         await bot.delete_state(user_id, message.chat.id)
         return
 
     status_msg = await bot.reply_to(message, loc.get_text('memory_archiving_started', lang_code).format(days=days_to_archive))
-
-    summarized_count = 0
+    await bot.delete_state(user_id, message.chat.id)
+    
     try:
-        vector_store = VectorStoreManager(api_key=api_key)
+        cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days_to_archive)
+        
+        history_to_archive = await db_manager.get_history_for_archiving(active_dialog_id, cutoff_date, fernet_instance)
 
-        for period in periods_to_summarize:
-            period_messages = period['messages']
-            period_start_date = period['start_date']
-            period_end_date = period['end_date']
-
-            current_date_str = period_start_date.strftime('%d.%m.%Y')
-            if period_start_date != period_end_date:
-                current_date_str += f" - {period_end_date.strftime('%d.%m.%Y')}"
-
+        if not history_to_archive:
+            # ИЗМЕНЕНИЕ 1: Убираем reply_markup
             await bot.edit_message_text(
-                loc.get_text('memory_archiving_processing', lang_code).format(current_date_str=current_date_str),
-                chat_id=user_id,
-                message_id=status_msg.message_id
+                loc.get_text('memory_archiving_no_old_messages', lang_code).format(days=days_to_archive),
+                user_id, status_msg.message_id
             )
+            return
 
-            summary = await gemini_service.summarize_conversation_history(api_key, period_messages)
-
-            if summary:
-                # Добавляем сводку в векторную базу
-                summary_metadata = {
-                    "role": "system",
-                    "content_type": "summary",
-                    "timestamp": datetime.now(datetime.timezone.utc).isoformat(), # Время создания сводки
-                    "user_id": user_id,
-                    "dialog_id": active_dialog_id,
-                    "period_start": period_start_date.isoformat(),
-                    "period_end": period_end_date.isoformat()
-                }
-                await vector_store.add_chunk(active_dialog_id, summary, summary_metadata)
-
-                # Удаляем детальные чанки за этот период
-                # Важно: здесь мы удаляем чанки из векторной базы, а не из основной БД (SQLite).
-                # Сообщения из SQLite остаются, но их детальные векторные представления удаляются.
-                # Это компромисс, так как удалять из SQLite сложнее и потенциально опасно.
-                # Наша "архивация" касается именно векторной памяти.
-
-                # Удаляем из вектора все, что входило в этот период (по дате, не по 'summary')
-                # Нужно получить все сообщения из SQLite за этот период и удалить их из вектора
-                # Но мы уже "сжали" их, поэтому просто удалим все чанки, которые были ДО cutoff_date
-                # Эта часть логики удаления будет выполняться один раз после всех суммаризаций
-
-                summarized_count += 1
-            else:
-                logger.warning(f"Не удалось получить сводку для периода {current_date_str} в диалоге {active_dialog_id}.", extra={'user_id': str(user_id)})
-
-        # После того, как все периоды были суммаризированы и добавлены, удаляем все старые ДЕТАЛЬНЫЕ чанки.
-        # Это более безопасный подход, чем удаление из основной БД, так как ChromaDB
-        # может быть перестроена, а оригинальные сообщения в SQLite останутся, если это потребуется для отладки.
-        await vector_store.delete_chunks_by_dialog_and_timestamp(active_dialog_id, datetime.combine(cutoff_date, datetime.min.time()).replace(tzinfo=datetime.timezone.utc))
-
-        await bot.edit_message_text(
-            loc.get_text('memory_archiving_done', lang_code).format(summarized_periods=summarized_count),
-            chat_id=user_id,
-            message_id=status_msg.message_id,
-            reply_markup=main_keyboard
-        )
+        summary = await gemini_service.summarize_conversation_history(api_key, history_to_archive)
+        
+        if summary:
+            vector_store = VectorStoreManager(api_key=api_key)
+            start_date = datetime.datetime.fromisoformat(history_to_archive[0]['timestamp'])
+            end_date = datetime.datetime.fromisoformat(history_to_archive[-1]['timestamp'])
+            
+            await vector_store.add_summary_chunk(active_dialog_id, user_id, summary, start_date, end_date)
+            
+            message_ids_to_delete = [msg['conversation_id'] for msg in history_to_archive]
+            deleted_count = await db_manager.delete_messages_by_ids(message_ids_to_delete)
+            
+            # ИЗМЕНЕНИЕ 2: Убираем reply_markup
+            await bot.edit_message_text(
+                loc.get_text('memory_archiving_done', lang_code).format(summarized_periods=deleted_count),
+                user_id, status_msg.message_id
+            )
+        else:
+             # ИЗМЕНЕНИЕ 3: Убираем reply_markup
+             await bot.edit_message_text(
+                "Не удалось сгенерировать сводку для архивации.",
+                user_id, status_msg.message_id
+            )
 
     except Exception as e:
         logger.exception(f"Ошибка в процессе архивации памяти для user_id {user_id}: {e}", extra={'user_id': str(user_id)})
+        # ИЗМЕНЕНИЕ 4: Убираем reply_markup
         await bot.edit_message_text(
             loc.get_text('memory_archiving_error', lang_code),
-            chat_id=user_id,
-            message_id=status_msg.message_id,
-            reply_markup=main_keyboard
+            user_id, status_msg.message_id
         )
     finally:
-        await bot.delete_state(user_id, message.chat.id)        
+        # ИЗМЕНЕНИЕ 5: Отправляем новое сообщение, чтобы вернуть клавиатуру
+        await bot.send_message(user_id, "Вы можете продолжать.", reply_markup=main_keyboard)
 
 # ===================================================================================
-# --- ОБЩИЙ ОБРАБОТЧИК ДЛЯ СООБЩЕНИЙ БЕЗ СОСТОЯНИЯ (ИСПРАВЛЕННЫЙ) ---
+# --- ОБЩИЙ ОБРАБОТЧИК ДЛЯ СООБЩЕНИЙ БЕЗ СОСТОЯНИЯ ---
 # ===================================================================================
 
 async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
     """
     Обрабатывает входящие сообщения пользователя, когда нет активного состояния.
 
-    Эта функция:
-    1. Проверяет и при необходимости запрашивает разблокировку сессии Zero-Knowledge.
-    2. Извлекает и расшифровывает API-ключ пользователя.
-    3. Формирует промпт для Gemini, включая поддержку текстовых, фото и голосовых сообщений.
-    4. Вызывает `gemini_service.generate_response` для получения ответа.
-    5. Добавляет контекстный заголовок и отправляет сгенерированный ответ пользователю,
-       обрабатывая возможные ошибки API.
-
     Args:
         message (types.Message): Объект входящего сообщения Telegram.
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
     """
-    # --- ШАГ 1: ПРОВЕРКА АКТИВНОЙ СЕССИИ (ИСПРАВЛЕНА) ---
-    # Вызываем централизованную функцию, которая сама обработает блокировку
     if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
         return
         
@@ -828,7 +755,6 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
     content_type = message.content_type
     
     try:
-        # --- ШАГ 2: ПОЛУЧЕНИЕ API-КЛЮЧА С РАСШИФРОВКОЙ ---
         api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
         if not api_key:
             error_text_key = 'api_key_needed_for_chat' if content_type == 'text' else 'api_key_needed_for_vision'
@@ -837,7 +763,6 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
 
         await tg_helpers.send_typing_action(bot, user_id)
 
-        # --- ШАГ 3: ФОРМИРОВАНИЕ ПРОМПТА (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
         prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]]
         if content_type == 'text':
             prompt = message.text
@@ -856,11 +781,8 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
             await bot.reply_to(message, loc.get_text('unsupported_content', lang_code))
             return
 
-        # --- ШАГ 4: ВЫЗОВ GEMINI С ПЕРЕДАЧЕЙ КЛЮЧА СЕССИИ ---
-        # Передаем content_type в generate_response
-        response_text, sources = await gemini_service.generate_response(user_id, prompt, api_key, fernet_instance, content_type) # <-- Добавлен content_type
+        response_text, sources = await gemini_service.generate_response(user_id, prompt, api_key, fernet_instance, content_type)
         
-        # --- ШАГ 5: ОТПРАВКА ОТВЕТА (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
         header = await _create_context_header(user_id, lang_code)
         if header:
             await bot.send_message(user_id, telegramify_markdown.markdownify(header), parse_mode='MarkdownV2')
@@ -887,19 +809,12 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
         await bot.delete_state(user_id, message.chat.id)
 
 # ===================================================================================
-# --- ГЛАВНЫЙ ЕДИНЫЙ ОБРАБОТЧИК И РЕГИСТРАЦИЯ (ИСПРАВЛЕННЫЙ) ---
+# --- ГЛАВНЫЙ ЕДИНЫЙ ОБРАБОТЧИК И РЕГИСТРАЦИЯ ---
 # ===================================================================================
 
 async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
     """
     Единый обработчик для всех входящих сообщений Telegram.
-
-    Эта функция выполняет маршрутизацию сообщений на основе:
-    1. Статуса блокировки пользователя и режима обслуживания.
-    2. Текущего состояния пользователя (например, ожидание пароля, API ключа, ответа на анкету).
-    3. Типа содержимого сообщения (текст, фото, документ, голос).
-
-    Также она регистрирует новых пользователей и уведомляет администратора.
 
     Args:
         message (types.Message): Объект входящего сообщения Telegram.
@@ -907,94 +822,64 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
     """
     user = message.from_user
     user_id = user.id
+    chat_id = message.chat.id
 
     user_logger.info(f"Получено сообщение ({message.content_type}) от user ID: {user_id}", extra={'user_id': str(user_id)})
     
-    # Теперь функция возвращает флаг, был ли пользователь новым
     is_new = await db_manager.add_or_update_user(user_id, user.username, user.first_name, user.last_name)
     if is_new:
-        # Уведомляем админа отсюда, а не из db_manager
         await tg_helpers.notify_admin_of_new_user(user_id, user.username, user.first_name, user.last_name)
 
     lang_code = await db_manager.get_user_language(user_id)
     if not await _check_access(bot, user_id, lang_code):
         return
     
-    # --- НОВАЯ ПРОВЕРКА НА КНОПКИ ---
-    # Если это текстовое сообщение, и оно совпадает с текстом одной из кнопок,
-    # мы прекращаем выполнение этого обработчика. Это позволит сработать
-    # правильному, более специфичному обработчику из command_handlers.py.
     if message.content_type == 'text' and message.text in ALL_BUTTON_TEXTS:
         logger.debug(f"Router: Сообщение '{message.text}' распознано как кнопка. Пропускаем.")
         return
 
-    current_state = await bot.get_state(user_id, user_id)
-    logger.debug(f"Router: User {user_id}, State: {current_state}, Content: {message.content_type}")
+    current_state = await bot.get_state(user_id, chat_id)
+    logger.debug(f"Router: User {user_id}, Chat {chat_id}, State: {current_state}, Content: {message.content_type}")
 
-    # --- ЕДИНАЯ ЛОГИЧЕСКАЯ ЦЕПОЧКА ---
-    if current_state == settings.STATE_ZK_WAITING_FOR_PASSWORD_SETUP:
-        await _handle_state_password_setup(message, bot)
-    
-    elif current_state == settings.STATE_ZK_WAITING_FOR_PASSWORD_CONFIRM:
-        await _handle_state_password_confirm(message, bot)
-        
-    elif current_state == settings.STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK:
-        await _handle_state_password_unlock(message, bot)
+    state_handlers = {
+        settings.STATE_ZK_WAITING_FOR_PASSWORD_SETUP: _handle_state_password_setup,
+        settings.STATE_ZK_WAITING_FOR_PASSWORD_CONFIRM: _handle_state_password_confirm,
+        settings.STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK: _handle_state_password_unlock,
+        settings.STATE_PROFILE_WAITING_FOR_ANSWER: _handle_state_profile_answer,
+        STATE_ZK_WAITING_FOR_PANIC_SETUP: _handle_state_panic_password_setup,
+        STATE_ZK_WAITING_FOR_PANIC_CONFIRM: _handle_state_panic_password_confirm,
+        STATE_ADMIN_WAITING_FOR_BROADCAST_MSG: _handle_state_admin_broadcast,
+        STATE_ADMIN_WAITING_FOR_USER_ID_TO_MANAGE: _handle_state_admin_user_id_manage,
+        STATE_ADMIN_WAITING_FOR_USER_ID_TO_REPLY: _handle_state_user_id_for_reply,
+        STATE_ADMIN_WAITING_FOR_REPLY_MESSAGE: _handle_state_message_to_user,
+        STATE_WAITING_FOR_API_KEY: _handle_state_api_key,
+        STATE_WAITING_FOR_TRANSLATE_TEXT: _handle_state_translate,
+        STATE_WAITING_FOR_NEW_DIALOG_NAME: _handle_state_new_dialog_name,
+        STATE_WAITING_FOR_RENAME_DIALOG: _handle_state_rename_dialog,
+        STATE_WAITING_FOR_FEEDBACK: _handle_state_feedback,
+        settings.STATE_WAITING_FOR_ARCHIVE_PERIOD: _handle_state_archive_period,
+        settings.STATE_WAITING_FOR_DOCUMENT: _handle_state_document_memorize,
+    }
 
-    elif current_state == settings.STATE_PROFILE_WAITING_FOR_ANSWER and message.content_type == 'text':
-        await _handle_state_profile_answer(message, bot)
+    handler = state_handlers.get(current_state)
 
-    elif current_state == STATE_ADMIN_WAITING_FOR_BROADCAST_MSG:
-        await _handle_state_admin_broadcast(message, bot)
-        
-    elif current_state == STATE_ADMIN_WAITING_FOR_USER_ID_TO_MANAGE:
-        await _handle_state_admin_user_id_manage(message, bot)
-        
-    elif current_state == STATE_ADMIN_WAITING_FOR_USER_ID_TO_REPLY:
-        await _handle_state_user_id_for_reply(message, bot)
-        
-    elif current_state == STATE_ADMIN_WAITING_FOR_REPLY_MESSAGE:
-        await _handle_state_message_to_user(message, bot)
-        
-    elif current_state == STATE_WAITING_FOR_API_KEY:
-        await _handle_state_api_key(message, bot)
-        
-    elif current_state == STATE_WAITING_FOR_TRANSLATE_TEXT:
-        await _handle_state_translate(message, bot)
-        
-    elif current_state == STATE_WAITING_FOR_NEW_DIALOG_NAME:
-        await _handle_state_new_dialog_name(message, bot)
-        
-    elif current_state == STATE_WAITING_FOR_RENAME_DIALOG:
-        await _handle_state_rename_dialog(message, bot)
-        
-    elif current_state == STATE_WAITING_FOR_FEEDBACK:
-        await _handle_state_feedback(message, bot)
-
-    elif current_state == settings.STATE_WAITING_FOR_ARCHIVE_PERIOD: # <-- НОВЫЙ ОБРАБОТЧИК СОСТОЯНИЯ
-        await _handle_state_archive_period(message, bot)
-
-    elif current_state == settings.STATE_WAITING_FOR_DOCUMENT:
-        await _handle_state_document_memorize(message, bot)
-        
+    if handler:
+        if handler in [_handle_state_profile_answer] and message.content_type != 'text':
+             await bot.reply_to(message, loc.get_text('state_wrong_content_type', lang_code))
+             return
+        await handler(message, bot)
     elif current_state is None:
-        # Если состояний нет, обрабатываем как обычное сообщение
         if message.content_type in ['text', 'photo', 'voice']:
             await _handle_no_state_message(message, bot)
         else:
             await bot.reply_to(message, loc.get_text('unsupported_content', lang_code))
-    
     else:
-        # Если есть состояние, но тип контента не подходит (например, фото вместо текста)
         await bot.reply_to(message, loc.get_text('state_wrong_content_type', lang_code))
 
 
 def register_message_handlers(bot: AsyncTeleBot):
     """
-    Регистрирует единственный универсальный обработчик для всех типов входящих сообщений.
-
-    Все сообщения будут направляться в `universal_message_router` для централизованной
-    обработки и маршрутизации на основе текущего состояния пользователя и типа контента.
+    Регистрирует единственный универсальный обработчик для всех типов сообщений.
 
     Args:
         bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.

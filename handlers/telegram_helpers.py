@@ -360,11 +360,42 @@ async def notify_admin_of_new_user(user_id: int, username: Optional[str], first_
 user_session_keys: Dict[int, Fernet] = {}
 
 
+async def is_session_active(user_id: int) -> bool:
+    """
+    Проверяет, активна ли сессия (есть в памяти и не истек ли срок годности).
+
+    Returns:
+        bool: True, если сессия активна, False - если нет.
+    """
+    # 1. Проверяем, есть ли сессия в памяти
+    if user_id not in user_session_keys:
+        return False
+
+    # 2. Если сессия есть, проверяем ее "срок годности"
+    last_active_time = await db_manager.get_last_session_time(user_id)
+    if not last_active_time:
+        # Если времени нет в БД, на всякий случай считаем сессию невалидной
+        del user_session_keys[user_id]
+        return False
+
+    # 3. Вычисляем разницу во времени
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    time_since_last_activity = utc_now - last_active_time
+    
+    # 4. Если прошло слишком много времени, блокируем сессию
+    if time_since_last_activity.total_seconds() > settings.SESSION_TIMEOUT_SECONDS:
+        logger.info(f"Сессия для user_id {user_id} истекла по таймауту.", extra={'user_id': str(user_id)})
+        del user_session_keys[user_id]
+        return False
+
+    # 5. Если все проверки пройдены
+    return True
+
 async def check_session_and_prompt_for_unlock(bot: AsyncTeleBot, message: types.Message) -> bool:
     """
-    Проверяет, активна ли сессия, и ее срок годности. Если неактивна, просит пароль.
+    Проверяет, активна ли сессия. Если неактивна, просит пароль.
     
-    Эта функция является единой точкой проверки сессии для всех обработчиков.
+    Эта функция является единой точкой проверки сессии для текстовых сообщений.
     Если сессия валидна, она автоматически обновляет время последней активности.
 
     Args:
@@ -377,35 +408,13 @@ async def check_session_and_prompt_for_unlock(bot: AsyncTeleBot, message: types.
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
 
-    # Функция для отправки запроса на разблокировку
-    async def _prompt_for_unlock():
+    session_is_active = await is_session_active(user_id)
+
+    if not session_is_active:
         await bot.set_state(user_id, settings.STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK, message.chat.id)
         await bot.reply_to(message, loc.get_text('zk_unlock_prompt', lang_code), reply_markup=types.ReplyKeyboardRemove())
-
-    # 1. Проверяем, есть ли сессия в памяти
-    if user_id not in user_session_keys:
-        await _prompt_for_unlock()
         return False
-
-    # 2. Если сессия есть, проверяем ее "срок годности"
-    last_active_time = await db_manager.get_last_session_time(user_id)
-    if not last_active_time:
-        # Если времени нет в БД, на всякий случай считаем сессию невалидной
-        del user_session_keys[user_id]
-        await _prompt_for_unlock()
-        return False
-
-    # 3. Вычисляем разницу во времени
-    utc_now = datetime.datetime.now(datetime.timezone.utc)
-    time_since_last_activity = utc_now - last_active_time
-    
-    # 4. Если прошло слишком много времени, блокируем сессию
-    if time_since_last_activity.total_seconds() > settings.SESSION_TIMEOUT_SECONDS:
-        logger.info(f"Сессия для user_id {user_id} истекла по таймауту. Требуется разблокировка.", extra={'user_id': str(user_id)})
-        del user_session_keys[user_id]
-        await _prompt_for_unlock()
-        return False
-
-    # 5. Если все проверки пройдены, обновляем время активности и разрешаем доступ
-    await db_manager.update_last_session_time(user_id)
-    return True
+    else:
+        # Если сессия активна, обновляем время активности и разрешаем доступ
+        await db_manager.update_last_session_time(user_id)
+        return True

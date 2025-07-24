@@ -301,3 +301,25 @@ class VectorStoreManager:
             logger.warning(f"Коллекция '{collection_name}' для диалога {dialog_id} не найдена. Нечего удалять.")
         except Exception as e:
             logger.exception(f"Ошибка при удалении старых чанков для диалога {dialog_id}: {e}")
+
+    def delete_all_user_collections(self, dialog_ids: List[int]):
+        """
+        Удаляет все коллекции, связанные со списком ID диалогов.
+        Вызывается при полной очистке данных пользователя.
+
+        Args:
+            dialog_ids (List[int]): Список идентификаторов диалогов для удаления.
+        """
+        if not dialog_ids:
+            return
+
+        logger.warning(f"Начато удаление всех коллекций для диалогов: {dialog_ids}.")
+        for dialog_id in dialog_ids:
+            collection_name = f"dialog_{dialog_id}"
+            try:
+                self.client.delete_collection(name=collection_name)
+                logger.info(f"Векторная память (коллекция '{collection_name}') для диалога {dialog_id} успешно удалена.")
+            except (ValueError, chromadb.errors.NotFoundError):
+                logger.warning(f"Попытка удаления несуществующей векторной памяти (коллекции '{collection_name}').")
+            except Exception as e:
+                logger.exception(f"Ошибка при удалении векторной памяти для диалога {dialog_id}: {e}")        

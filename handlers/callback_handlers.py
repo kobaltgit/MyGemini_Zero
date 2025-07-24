@@ -31,11 +31,15 @@ from config.settings import (
     # Импорты для диалогов
     CALLBACK_DIALOGS_MENU, CALLBACK_DIALOG_SWITCH_PREFIX, CALLBACK_DIALOG_RENAME_PREFIX,
     CALLBACK_DIALOG_DELETE_PREFIX, CALLBACK_DIALOG_CREATE, CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX,
-    STATE_WAITING_FOR_NEW_DIALOG_NAME, STATE_WAITING_FOR_RENAME_DIALOG
+    STATE_WAITING_FOR_NEW_DIALOG_NAME, STATE_WAITING_FOR_RENAME_DIALOG,
+    # Новые импорты
+    CALLBACK_DATA_MANAGEMENT_MENU, CALLBACK_ARCHIVE_MEMORY_START,
+    CALLBACK_CLEAR_DATA_START, CALLBACK_CLEAR_DATA_CONFIRM, CALLBACK_CLEAR_DATA_CANCEL,
+    CALLBACK_PANIC_SETUP_YES, CALLBACK_PANIC_SETUP_NO,
+    STATE_ZK_WAITING_FOR_PANIC_SETUP
 )
-# from .command_handlers import user_session_keys
-from features import profile_manager # Импортируем сам модуль
-from features.profile_manager import QUESTIONNAIRE, ask_question # Импортируем компоненты
+from features import profile_manager
+from features.profile_manager import QUESTIONNAIRE, ask_question
 from database import db_manager
 from services import gemini_service
 from services.gemini_service import GeminiAPIError
@@ -53,7 +57,13 @@ logger = get_logger(__name__)
 # --- Основной обработчик ---
 
 async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
-    """Обрабатывает все callback запросы."""
+    """
+    Обрабатывает все callback-запросы от inline-клавиатур.
+
+    Args:
+        call: Объект CallbackQuery Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user = call.from_user
     user_id = user.id
     data = call.data
@@ -63,52 +73,52 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
         await tg_helpers.answer_callback_query(bot, call)
         return
 
-    # Обновляем данные пользователя и проверяем, новый ли он
     is_new = await db_manager.add_or_update_user(user_id, user.username, user.first_name, user.last_name)
     if is_new:
         await tg_helpers.notify_admin_of_new_user(user_id, user.username, user.first_name, user.last_name)
 
     lang_code = await db_manager.get_user_language(user_id)
 
-    # --- НОВАЯ ПРОВЕРКА СЕССИИ ДЛЯ ЗАЩИЩЕННЫХ ДЕЙСТВИЙ ---
-    # Определяем список действий, которые требуют активной сессии
-    protected_callbacks = [
+    # --- Централизованная проверка сессии для защищенных действий ---
+    PROTECTED_CALLBACKS = [
         CALLBACK_SETTINGS_CHOOSE_MODEL_MENU,
-        CALLBACK_SETTINGS_MODEL_PREFIX,
-        # В будущем сюда можно добавить другие действия, например, просмотр истории
+        CALLBACK_CALENDAR_DATE_PREFIX,
+        CALLBACK_CLEAR_DATA_CONFIRM, # Подтверждение удаления требует сессии для очистки вектора
     ]
 
-    # Проверяем, начинается ли колбэк с одного из защищенных префиксов
-    is_protected = any(data.startswith(prefix) for prefix in protected_callbacks)
+    is_protected = any(data.startswith(prefix) for prefix in PROTECTED_CALLBACKS)
 
-    # Создаем фиктивный объект Message для передачи в функцию проверки
-    fake_message = types.Message(
-        message_id=call.message.message_id,
-        from_user=call.from_user,
-        date=call.message.date,
-        chat=call.message.chat,
-        content_type='text',
-        options={},
-        json_string=""
-    )
-    if is_protected and not await tg_helpers.check_session_and_prompt_for_unlock(bot, fake_message):
-        # Отвечаем на callback, чтобы убрать "часики"
-        await tg_helpers.answer_callback_query(bot, call)
-        return
-    # --- КОНЕЦ ПРОВЕРКИ ---
+    if is_protected:
+        is_session_active = await tg_helpers.is_session_active(user_id)
+        if not is_session_active:
+            await bot.set_state(user_id, settings.STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK, message.chat.id)
+            await bot.add_data(user_id, message.chat.id, pending_callback_data=data)
+            await bot.send_message(user_id, loc.get_text('zk_unlock_prompt', lang_code), reply_markup=types.ReplyKeyboardRemove())
+            await tg_helpers.answer_callback_query(bot, call)
+            return
 
-    # Маршрутизатор колбэков
+        await db_manager.update_last_session_time(user_id)
+
+    # --- Маршрутизатор колбэков ---
     try:
         if data == CALLBACK_IGNORE:
             await tg_helpers.answer_callback_query(bot, call)
-
-        # --- НОВЫЙ МАРШРУТ ДЛЯ АНКЕТЫ ---
+        elif data in [CALLBACK_PANIC_SETUP_YES, CALLBACK_PANIC_SETUP_NO]:
+            await handle_panic_password_setup(bot, call, lang_code)
+        elif data == CALLBACK_DATA_MANAGEMENT_MENU:
+            await handle_data_management_menu(bot, call, lang_code)
+        elif data == CALLBACK_ARCHIVE_MEMORY_START:
+            await handle_archive_memory_start(bot, call, lang_code)
+        elif data == CALLBACK_CLEAR_DATA_START:
+            await handle_clear_data_start(bot, call, lang_code)
+        elif data == CALLBACK_CLEAR_DATA_CONFIRM:
+            await handle_clear_data_confirm(bot, call, lang_code)
+        elif data == CALLBACK_CLEAR_DATA_CANCEL:
+            await handle_clear_data_cancel(bot, call, lang_code)
         elif data.startswith(settings.CALLBACK_PROFILE_CHOICE):
             await handle_profile_choice(bot, call, lang_code)
-        # --- Обратная связь ---
         elif data == CALLBACK_REPORT_ERROR:
             await handle_report_error(bot, call, lang_code)
-        # --- Настройки ---
         elif data.startswith(CALLBACK_SETTINGS_STYLE_PREFIX):
             await handle_style_setting(bot, call, lang_code)
         elif data.startswith(CALLBACK_SETTINGS_LANG_PREFIX):
@@ -125,7 +135,6 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
             await handle_persona_selection(bot, call, lang_code)
         elif data == CALLBACK_SETTINGS_BACK_TO_MAIN:
             await handle_back_to_main_settings(bot, call, lang_code)
-        # --- Диалоги ---
         elif data == CALLBACK_DIALOGS_MENU:
             await handle_dialogs_menu(bot, call, lang_code)
         elif data == CALLBACK_DIALOG_CREATE:
@@ -138,7 +147,6 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
             await handle_delete_dialog_start(bot, call, lang_code)
         elif data.startswith(CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX):
             await handle_delete_dialog_confirm(bot, call, lang_code)
-        # --- Прочее ---
         elif data.startswith(CALLBACK_LANG_PREFIX):
             await handle_language_selection_for_translation(bot, call, lang_code)
         elif data.startswith(CALLBACK_CALENDAR_DATE_PREFIX):
@@ -156,10 +164,100 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
         await tg_helpers.answer_callback_query(bot, call, text="An internal error occurred.", show_alert=True)
 
 
+# --- Обработчики управления данными ---
+
+async def handle_panic_password_setup(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """
+    Обрабатывает ответ на предложение установить пароль паники.
+
+    Args:
+        bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
+        call (types.CallbackQuery): Объект callback-запроса от Telegram.
+        lang_code (str): Код языка пользователя для локализации.
+    """
+    user_id = call.from_user.id
+    await tg_helpers.edit_message_reply_markup_safe(bot, call.message.chat.id, call.message.message_id)
+
+    if call.data == CALLBACK_PANIC_SETUP_YES:
+        await bot.set_state(user_id, STATE_ZK_WAITING_FOR_PANIC_SETUP, call.message.chat.id)
+        await bot.send_message(user_id, loc.get_text('panic_password_ask', lang_code))
+    else:
+        await bot.send_message(user_id, loc.get_text('panic_password_setup_skipped', lang_code))
+        
+        # Анкета уже пройдена, показываем основную клавиатуру
+        main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+        await bot.send_message(user_id, "Настройка завершена! Можете начинать работу.", reply_markup=main_keyboard)
+
+    await tg_helpers.answer_callback_query(bot, call)
+
+
+async def handle_data_management_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Отображает меню управления данными."""
+    text = loc.get_text('data_management_title', lang_code)
+    markup = mk.create_data_management_keyboard(lang_code)
+    await tg_helpers.edit_message_text_safe(
+        bot, call.message.chat.id, call.message.message_id, text, reply_markup=markup
+    )
+    await tg_helpers.answer_callback_query(bot, call)
+
+
+async def handle_archive_memory_start(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """
+    Начинает процесс архивации, переводя бота в состояние ожидания периода.
+    """
+    user_id = call.from_user.id
+    # Просто устанавливаем состояние и просим ввести количество дней.
+    # Вся сложная логика будет в message_handler.
+    await bot.set_state(user_id, settings.STATE_WAITING_FOR_ARCHIVE_PERIOD, call.message.chat.id)
+    await tg_helpers.edit_message_text_safe(
+        bot, call.message.chat.id, call.message.message_id,
+        text=loc.get_text('memory_archiving_prompt', lang_code),
+        reply_markup=None
+    )
+    await tg_helpers.answer_callback_query(bot, call)
+
+
+async def handle_clear_data_start(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Показывает подтверждение на полную очистку данных."""
+    text = loc.get_text('clear_data_confirm_prompt', lang_code)
+    markup = mk.create_confirm_clear_data_keyboard(lang_code)
+    await tg_helpers.edit_message_text_safe(
+        bot, call.message.chat.id, call.message.message_id, text, reply_markup=markup
+    )
+    await tg_helpers.answer_callback_query(bot, call)
+
+
+async def handle_clear_data_confirm(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Выполняет полную очистку данных после подтверждения."""
+    user_id = call.from_user.id
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
+    if not fernet_instance:
+        await tg_helpers.answer_callback_query(bot, call, text="Ошибка: Сессия не найдена.", show_alert=True)
+        return
+
+    await db_manager.clear_user_content(user_id, fernet_instance)
+
+    active_dialog_id = await db_manager.get_active_dialog_id(user_id)
+    if active_dialog_id:
+        gemini_service.reset_dialog_chat(active_dialog_id)
+
+    await tg_helpers.edit_message_text_safe(
+        bot, call.message.chat.id, call.message.message_id,
+        text=loc.get_text('clear_data_success', lang_code),
+        reply_markup=None
+    )
+    await tg_helpers.answer_callback_query(bot, call)
+
+
+async def handle_clear_data_cancel(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Отменяет очистку данных и возвращает в меню управления."""
+    await handle_data_management_menu(bot, call, lang_code)
+    await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('clear_data_cancelled', lang_code))
+
+# --- Прочие обработчики ---
+
 async def handle_report_error(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """
-    Обрабатывает нажатие на кнопку "Сообщить об ошибке".
-    """
+    """Обрабатывает нажатие на кнопку "Сообщить об ошибке"."""
     user_id = call.from_user.id
     await tg_helpers.edit_message_reply_markup_safe(bot, call.message.chat.id, call.message.message_id)
     await bot.set_state(user_id, STATE_WAITING_FOR_FEEDBACK, call.message.chat.id)
@@ -167,21 +265,9 @@ async def handle_report_error(bot: AsyncTeleBot, call: types.CallbackQuery, lang
     await tg_helpers.answer_callback_query(bot, call)
 
 async def handle_profile_choice(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
-    """Обрабатывает нажатие на кнопки в анкете (вопросы с выбором).
-
-    Парсит callback_data, чтобы определить, на какой вопрос дан ответ.
-    Сохраняет локализованный текст ответа в состояние пользователя.
-    Определяет следующий вопрос в анкете и либо задает его,
-    либо завершает анкетирование, сохраняя профиль в БД.
-
-    Args:
-        bot: Экземпляр AsyncTeleBot.
-        call: Объект CallbackQuery, содержащий ответ пользователя.
-        lang_code: Языковой код пользователя.
-    """
+    """Обрабатывает нажатие на кнопки в анкете."""
     user_id = call.from_user.id
     
-    # Парсим данные из колбэка: "profile_choice:question_key:answer_key"
     try:
         _, question_key, answer_key = call.data.split(':')
     except ValueError:
@@ -189,34 +275,25 @@ async def handle_profile_choice(bot: AsyncTeleBot, call: types.CallbackQuery, la
         await tg_helpers.answer_callback_query(bot, call)
         return
 
-    # Получаем локализованный текст ответа
-    # Для этого нам нужно знать, к какой кнопке относится ответ
     if question_key == 'purpose':
         answer_text = loc.get_text(f'profile_btn_purpose_{answer_key}', lang_code)
     elif question_key == 'style':
         answer_text = loc.get_text(f'profile_btn_style_{answer_key}', lang_code)
     else:
-        answer_text = answer_key # Фоллбэк
+        answer_text = answer_key
 
-    # Убираем клавиатуру у предыдущего сообщения
     await tg_helpers.edit_message_reply_markup_safe(bot, call.message.chat.id, call.message.message_id)
 
     async with bot.retrieve_data(user_id, call.message.chat.id) as data:
         current_profile = data.get('current_profile', {})
-        
-        # Сохраняем ответ
         current_profile[question_key] = answer_text
         
-        # Определяем следующий вопрос
         next_question_key = QUESTIONNAIRE.get(question_key, {}).get('next')
 
         if next_question_key:
-            # Задаем следующий вопрос
             data['current_question'] = next_question_key
             await ask_question(bot, user_id, next_question_key)
         else:
-            # Анкета завершена
-            lang_code = await db_manager.get_user_language(user_id)
             fernet_instance = tg_helpers.user_session_keys.get(user_id)
             if fernet_instance:
                 await db_manager.save_user_profile(user_id, current_profile, fernet_instance)
@@ -261,7 +338,7 @@ async def handle_switch_dialog(bot: AsyncTeleBot, call: types.CallbackQuery, lan
     dialogs = await db_manager.get_user_dialogs(call.from_user.id)
     switched_dialog_name = next((d['name'] for d in dialogs if d['dialog_id'] == dialog_id_to_switch), '???')
 
-    await handle_dialogs_menu(bot, call, lang_code) # Обновляем меню
+    await handle_dialogs_menu(bot, call, lang_code)
     await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_switched_success', lang_code).format(name=switched_dialog_name))
 
 async def handle_rename_dialog_start(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
@@ -309,21 +386,16 @@ async def handle_delete_dialog_confirm(bot: AsyncTeleBot, call: types.CallbackQu
     user_id = call.from_user.id
     dialog_id_to_delete = int(call.data[len(CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX):])
 
-    # --- НАЧАЛО ИНТЕГРАЦИИ VECTOR STORE ---
-    # Для инициализации менеджера нам нужна сессия, чтобы получить API-ключ
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if fernet_instance:
         api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
         if api_key:
             try:
-                # Инициализируем менеджер и удаляем память диалога
                 vector_store = VectorStoreManager(api_key=api_key)
                 vector_store.delete_dialog_memory(dialog_id_to_delete)
             except Exception as e:
-                # Логируем ошибку, но не останавливаем процесс удаления из основной БД
                 logger.error(f"Не удалось удалить память диалога {dialog_id_to_delete} из векторного хранилища: {e}", extra={'user_id': str(user_id)})
-    # --- КОНЕЦ ИНТЕГРАЦИИ VECTOR STORE ---
-
+    
     deleted_dialog_name = await db_manager.delete_dialog(user_id, dialog_id_to_delete)
     if not deleted_dialog_name:
         await tg_helpers.answer_callback_query(bot, call, text="Ошибка при удалении диалога.", show_alert=True)
@@ -333,8 +405,6 @@ async def handle_delete_dialog_confirm(bot: AsyncTeleBot, call: types.CallbackQu
     if not remaining_dialogs:
         new_dialog_name = "Основной диалог" if lang_code == 'ru' else "General Chat"
         await db_manager.create_dialog(user_id, new_dialog_name, set_active=True)
-        # При удалении последнего диалога память для него уже удалена, но нужно создать память для нового
-        # Однако, мы не будем этого делать здесь, память будет создана при первом сообщении.
         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_deleted_last_success', lang_code).format(name=deleted_dialog_name))
     else:
          await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('dialog_deleted_success', lang_code).format(name=deleted_dialog_name))
@@ -356,6 +426,7 @@ async def handle_back_to_main_settings(bot: AsyncTeleBot, call: types.CallbackQu
     await tg_helpers.answer_callback_query(bot, call)
 
 async def handle_set_api_key_from_settings(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Начинает процесс установки API ключа из меню настроек."""
     await bot.set_state(call.from_user.id, STATE_WAITING_FOR_API_KEY, call.message.chat.id)
     await tg_helpers.answer_callback_query(bot, call)
     await tg_helpers.edit_message_text_safe(
@@ -364,6 +435,7 @@ async def handle_set_api_key_from_settings(bot: AsyncTeleBot, call: types.Callba
     )
 
 async def handle_language_setting(bot: AsyncTeleBot, call: types.CallbackQuery):
+    """Обрабатывает смену языка интерфейса."""
     user_id = call.from_user.id
     new_lang_code = call.data[len(CALLBACK_SETTINGS_LANG_PREFIX):]
     await db_manager.set_user_language(user_id, new_lang_code)
@@ -371,6 +443,7 @@ async def handle_language_setting(bot: AsyncTeleBot, call: types.CallbackQuery):
     await tg_helpers.answer_callback_query(bot, call, text=f"Language set to {'English' if new_lang_code == 'en' else 'Русский'}")
 
 async def handle_style_setting(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Обрабатывает смену стиля общения бота."""
     user_id = call.from_user.id
     style_code = call.data[len(CALLBACK_SETTINGS_STYLE_PREFIX):]
     if style_code in BOT_STYLES:
@@ -382,6 +455,7 @@ async def handle_style_setting(bot: AsyncTeleBot, call: types.CallbackQuery, lan
         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('style_changed_notice', lang_code))
 
 async def handle_persona_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Открывает меню выбора персоны."""
     user_id = call.from_user.id
     text = (f"{loc.get_text('persona_selection_title', lang_code)}\n\n"
             f"{loc.get_text('persona_selection_desc', lang_code)}")
@@ -393,6 +467,7 @@ async def handle_persona_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang
     await tg_helpers.answer_callback_query(bot, call)
 
 async def handle_persona_selection(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Обрабатывает выбор персоны."""
     user_id = call.from_user.id
     persona_id = call.data[len(CALLBACK_SETTINGS_PERSONA_PREFIX):]
     if persona_id in BOT_PERSONAS:
@@ -410,12 +485,11 @@ async def handle_persona_selection(bot: AsyncTeleBot, call: types.CallbackQuery,
         )
 
 async def handle_choose_model_menu(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Открывает меню выбора модели Gemini."""
     user_id = call.from_user.id
     
-    # Получаем ключ сессии, проверка на его наличие уже была в роутере
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if not fernet_instance:
-        # Дополнительная проверка на всякий случай
         await tg_helpers.answer_callback_query(bot, call, text="Ошибка: Сессия не найдена.", show_alert=True)
         return
 
@@ -436,7 +510,6 @@ async def handle_choose_model_menu(bot: AsyncTeleBot, call: types.CallbackQuery,
                 bot, call.message.chat.id, call.message.message_id,
                 text=loc.get_text('model_selection_error', lang_code)
             )
-            # Возвращаем в меню настроек после ошибки
             settings_keyboard = await mk.create_settings_keyboard(user_id)
             await tg_helpers.edit_message_text_safe(
                 bot, call.message.chat.id, call.message.message_id,
@@ -455,6 +528,7 @@ async def handle_choose_model_menu(bot: AsyncTeleBot, call: types.CallbackQuery,
         await tg_helpers.answer_callback_query(bot, call, text=user_friendly_error, show_alert=True)
 
 async def handle_model_selection(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Обрабатывает выбор модели Gemini."""
     user_id = call.from_user.id
     model_name = call.data[len(CALLBACK_SETTINGS_MODEL_PREFIX):]
     await db_manager.set_user_gemini_model(user_id, model_name)
@@ -467,6 +541,7 @@ async def handle_model_selection(bot: AsyncTeleBot, call: types.CallbackQuery, l
     )
 
 async def handle_language_selection_for_translation(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Обрабатывает выбор языка для перевода."""
     user_id = call.from_user.id
     target_lang_code = call.data[len(CALLBACK_LANG_PREFIX):]
     lang_name = TRANSLATE_LANGUAGES.get(target_lang_code, target_lang_code)
@@ -479,9 +554,9 @@ async def handle_language_selection_for_translation(bot: AsyncTeleBot, call: typ
     )
 
 async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """Обрабатывает выбор даты в календаре для просмотра истории."""
     user_id = call.from_user.id
     
-    # --- НОВАЯ ПРОВЕРКА СЕССИИ ---
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
     if not fernet_instance:
         await tg_helpers.answer_callback_query(bot, call, text=loc.get_text('zk_user_is_locked', lang_code), show_alert=True)
@@ -499,7 +574,6 @@ async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.Callback
         selected_date = datetime.datetime.strptime(selected_date_str, '%Y-%m-%d').date()
         active_dialog_id = await db_manager.get_active_dialog_id(user_id)
         if active_dialog_id:
-            # Передаем ключ сессии для расшифровки истории
             history = await db_manager.get_conversation_history_by_date(active_dialog_id, selected_date, fernet_instance)
             if history:
                 history_text = f"📜 {loc.get_text('history_for_date', lang_code)} {selected_date.strftime('%d.%m.%Y')}:\n\n"
@@ -511,7 +585,7 @@ async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.Callback
                 await tg_helpers.send_long_message(bot, user_id, history_text)
             else:
                 await bot.send_message(user_id, loc.get_text('history_no_messages', lang_code))
-        # Сбрасываем состояние после успешного просмотра
+        
         current_state = await bot.get_state(user_id, call.message.chat.id)
         if current_state == STATE_WAITING_FOR_HISTORY_DATE:
             await bot.delete_state(user_id, call.message.chat.id)
@@ -521,6 +595,7 @@ async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.Callback
         await bot.delete_state(user_id, call.message.chat.id)
 
 async def handle_calendar_month_navigation(bot: AsyncTeleBot, call: types.CallbackQuery):
+    """Обрабатывает навигацию по месяцам в календаре."""
     try:
         year, month = map(int, call.data[len(CALLBACK_CALENDAR_MONTH_PREFIX):].split('-'))
         new_markup = mk.create_calendar_keyboard(year, month)
@@ -531,6 +606,6 @@ async def handle_calendar_month_navigation(bot: AsyncTeleBot, call: types.Callba
         await tg_helpers.answer_callback_query(bot, call)
 
 def register_callback_handlers(bot: AsyncTeleBot):
-    """Регистрирует основной обработчик callback запросов."""
+    """Регистрирует основной обработчик callback-запросов."""
     bot.register_callback_query_handler(handle_callback_query, func=lambda call: True, pass_bot=True)
     logger.info("Обработчик callback query зарегистрирован.")

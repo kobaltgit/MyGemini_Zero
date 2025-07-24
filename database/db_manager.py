@@ -29,6 +29,7 @@ import asyncio
 import datetime
 import json
 from typing import List, Tuple, Optional, Dict, Any
+from services.vector_store_manager import VectorStoreManager
 from cryptography.fernet import Fernet, InvalidToken
 
 from logger_config import get_logger
@@ -166,7 +167,8 @@ def setup_database_sync():
                 'master_password_hash': 'BLOB',
                 'encryption_salt': 'BLOB',
                 'api_key': 'BLOB',
-                'last_session_ts': 'TEXT'
+                'last_session_ts': 'TEXT',
+                'panic_password_hash': 'BLOB'
             }
             missing_cols = required_columns.keys() - user_columns
             for col in missing_cols:
@@ -651,6 +653,69 @@ async def get_user_profile(user_id: int, fernet_instance: Fernet) -> Optional[Di
                 return None
     return None
 
+async def get_history_for_archiving(dialog_id: int, cutoff_date: datetime.datetime, fernet_instance: Fernet) -> List[Dict[str, Any]]:
+    """
+    Получает сообщения из указанного диалога, которые старше cutoff_date.
+    Возвращает расшифрованную историю, включая ID сообщений для последующего удаления.
+
+    Args:
+        dialog_id: ID диалога для поиска.
+        cutoff_date: Временная метка. Все сообщения старше этой даты будут выбраны.
+        fernet_instance: Экземпляр Fernet для расшифровки.
+
+    Returns:
+        Список словарей, где каждый словарь представляет старое сообщение.
+    """
+    query = """
+        SELECT conversation_id, role, message_text, timestamp
+        FROM conversations
+        WHERE dialog_id = ? AND timestamp < ?
+        ORDER BY timestamp ASC
+    """
+    params = (dialog_id, cutoff_date.isoformat())
+    rows = await _execute_query(query, params, fetch_all=True)
+    if not rows:
+        return []
+
+    decrypted_history = []
+    for row in rows:
+        decrypted_text = crypto_helpers.decrypt_data(row['message_text'], fernet_instance)
+        if decrypted_text is not None:
+            decrypted_history.append({
+                'conversation_id': row['conversation_id'],
+                'role': row['role'],
+                'message_text': decrypted_text,
+                'timestamp': row['timestamp']
+            })
+        else:
+            db_logger.warning(f"Пропущено сообщение {row['conversation_id']} при архивации из-за ошибки расшифровки.")
+            
+    return decrypted_history
+
+
+async def delete_messages_by_ids(message_ids: List[int]) -> int:
+    """
+    Удаляет сообщения из таблицы conversations по списку их ID.
+
+    Args:
+        message_ids: Список ID сообщений, которые нужно удалить.
+
+    Returns:
+        Количество удаленных строк.
+    """
+    if not message_ids:
+        return 0
+    
+    placeholders = ', '.join(['?'] * len(message_ids))
+    query = f"DELETE FROM conversations WHERE conversation_id IN ({placeholders})"
+    
+    rows_affected = await _execute_query(query, tuple(message_ids), is_write_operation=True)
+    
+    if rows_affected is not None:
+        db_logger.info(f"Удалено {rows_affected} сообщений в процессе архивации.")
+        return rows_affected
+    return 0
+
 # --- НОВЫЕ ФУНКЦИИ ДЛЯ АДМИН-ПАНЕЛИ ---
 
 async def set_app_setting(key: str, value: str):
@@ -753,3 +818,64 @@ async def get_all_users_for_export() -> List[Dict[str, Any]]:
     """
     rows = await _execute_query(query, fetch_all=True)
     return [dict(row) for row in rows] if rows else []
+
+async def set_panic_password(user_id: int, password: str):
+    """Генерирует хеш для пароля паники и сохраняет его для пользователя."""
+    password_hash = crypto_helpers.hash_password(password)
+    query = "UPDATE users SET panic_password_hash = ? WHERE user_id = ?"
+    params = (password_hash, user_id)
+    await _execute_query(query, params, is_write_operation=True)
+    db_logger.info(f"Пароль паники установлен для пользователя {user_id}.")
+
+
+async def verify_panic_password(user_id: int, provided_password: str) -> bool:
+    """Проверяет предоставленный пароль паники."""
+    query = "SELECT panic_password_hash FROM users WHERE user_id = ?"
+    result = await _execute_query(query, (user_id,), fetch_one=True)
+    if not result or not result['panic_password_hash']:
+        return False
+    stored_hash = result['panic_password_hash']
+    # Также проверяем, что он не совпадает с основным паролем, на всякий случай
+    is_panic_match = crypto_helpers.verify_password(stored_hash, provided_password)
+    if is_panic_match:
+        is_master_match = await verify_master_password(user_id, provided_password)
+        return not is_master_match
+    return False
+
+
+async def clear_user_content(user_id: int, fernet_instance: Fernet):
+    """
+    Удаляет весь контент пользователя (диалоги, сообщения), но сохраняет
+    самого пользователя, его пароли, профиль и API-ключ.
+    Сначала удаляет векторную память, затем данные из SQLite.
+    После удаления создает один новый "Основной диалог".
+
+    Args:
+        user_id (int): ID пользователя для очистки.
+        fernet_instance (Fernet): Ключ сессии для доступа к API-ключу Google.
+    """
+    db_logger.warning(f"Начата полная очистка контента для пользователя {user_id}.")
+
+    # 1. Получаем список ID всех диалогов пользователя ПЕРЕД их удалением
+    dialogs_to_delete = await get_user_dialogs(user_id)
+    dialog_ids = [d['dialog_id'] for d in dialogs_to_delete]
+
+    # 2. Удаляем коллекции из векторной базы
+    # Для этого нужен API-ключ, который тоже зашифрован
+    api_key = await get_user_api_key(user_id, fernet_instance)
+    if api_key and dialog_ids:
+        try:
+            vector_store = VectorStoreManager(api_key=api_key)
+            vector_store.delete_all_user_collections(dialog_ids)
+        except Exception as e:
+            db_logger.exception(f"Не удалось полностью очистить векторную память для user_id {user_id}: {e}")
+            # Не прерываем процесс, очистка основной БД важнее
+
+    # 3. Удаляем все диалоги из SQLite (каскадное удаление удалит и все сообщения)
+    delete_dialogs_query = "DELETE FROM dialogs WHERE user_id = ?"
+    await _execute_query(delete_dialogs_query, (user_id,), is_write_operation=True)
+    db_logger.info(f"Все диалоги и сообщения для user_id {user_id} удалены из SQLite.")
+
+    # 4. Создаем новый диалог по умолчанию
+    await create_dialog(user_id, "Основной диалог", set_active=True)
+    db_logger.info(f"Создан новый основной диалог для user_id {user_id} после очистки.")

@@ -240,6 +240,16 @@ CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX = 'dialog_confirm_delete:'
 CALLBACK_DIALOG_CREATE = 'dialog_create'
 CALLBACK_PROFILE_CHOICE = 'profile_choice:'
 
+# Data Management
+CALLBACK_DATA_MANAGEMENT_MENU = 'data_management_menu'
+CALLBACK_ARCHIVE_MEMORY_START = 'archive_memory_start'
+CALLBACK_CLEAR_DATA_START = 'clear_data_start'
+CALLBACK_CLEAR_DATA_CONFIRM = 'clear_data_confirm'
+CALLBACK_CLEAR_DATA_CANCEL = 'clear_data_cancel'
+# Panic Password Setup
+CALLBACK_PANIC_SETUP_YES = 'panic_setup_yes'
+CALLBACK_PANIC_SETUP_NO = 'panic_setup_no'
+
 # --- НОВЫЕ ПРЕФИКСЫ ДЛЯ АДМИН-ПАНЕЛИ ---
 CALLBACK_ADMIN_MAIN_MENU = 'admin_main_menu'
 # Maintenance
@@ -287,6 +297,8 @@ STATE_ZK_WAITING_FOR_PASSWORD_SETUP = 'zk_waiting_for_password_setup'
 STATE_ZK_WAITING_FOR_PASSWORD_CONFIRM = 'zk_waiting_for_password_confirm'
 STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK = 'zk_waiting_for_password_unlock'
 STATE_PROFILE_WAITING_FOR_ANSWER = 'profile_waiting_for_answer'
+STATE_ZK_WAITING_FOR_PANIC_SETUP = 'zk_waiting_for_panic_setup'
+STATE_ZK_WAITING_FOR_PANIC_CONFIRM = 'zk_waiting_for_panic_confirm'
 
 
 print(f"Конфигурация MyGemini/settings.py загружена. Модель Gemini: {DEFAULT_MODEL_ID}")

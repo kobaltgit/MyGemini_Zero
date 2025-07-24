@@ -30,11 +30,16 @@ from config.settings import (
     # Dialogs
     CALLBACK_DIALOGS_MENU, CALLBACK_DIALOG_SWITCH_PREFIX, CALLBACK_DIALOG_RENAME_PREFIX,
     CALLBACK_DIALOG_DELETE_PREFIX, CALLBACK_DIALOG_CREATE, CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX,
+    # Data Management (НОВЫЕ ИМПОРТЫ)
+    CALLBACK_DATA_MANAGEMENT_MENU, CALLBACK_ARCHIVE_MEMORY_START,
+    CALLBACK_CLEAR_DATA_START, CALLBACK_CLEAR_DATA_CONFIRM, CALLBACK_CLEAR_DATA_CANCEL,
+    # Panic Password (НОВЫЕ ИМПОРТЫ)
+    CALLBACK_PANIC_SETUP_YES, CALLBACK_PANIC_SETUP_NO,
     # Admin Panel
     CALLBACK_ADMIN_MAIN_MENU, CALLBACK_ADMIN_STATS_MENU, CALLBACK_ADMIN_COMMUNICATION_MENU,
     CALLBACK_ADMIN_USER_MANAGEMENT_MENU, CALLBACK_ADMIN_MAINTENANCE_MENU, CALLBACK_ADMIN_TOGGLE_MAINTENANCE,
     CALLBACK_ADMIN_BROADCAST, CALLBACK_ADMIN_CONFIRM_BROADCAST, CALLBACK_ADMIN_CANCEL_BROADCAST,
-    CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX, CALLBACK_ADMIN_RESET_API_KEY_PREFIX # <-- НОВЫЕ ИМПОРТЫ
+    CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX, CALLBACK_ADMIN_RESET_API_KEY_PREFIX
 )
 from database import db_manager
 from logger_config import get_logger
@@ -126,6 +131,7 @@ async def create_settings_keyboard(user_id: int) -> types.InlineKeyboardMarkup:
     current_style = await db_manager.get_user_bot_style(user_id)
     current_lang = await db_manager.get_user_language(user_id)
 
+    # --- Секция API и Модели ---
     markup.add(types.InlineKeyboardButton(loc.get_text('settings_api_key_section', current_lang), callback_data=CALLBACK_IGNORE))
     markup.add(types.InlineKeyboardButton(
         loc.get_text('settings_btn_set_api_key', current_lang),
@@ -136,6 +142,8 @@ async def create_settings_keyboard(user_id: int) -> types.InlineKeyboardMarkup:
         loc.get_text('settings_btn_choose_model', current_lang),
         callback_data=CALLBACK_SETTINGS_CHOOSE_MODEL_MENU
     ))
+
+    # --- Секция Персонализации ---
     markup.add(types.InlineKeyboardButton(loc.get_text('settings_persona_section', current_lang), callback_data=CALLBACK_IGNORE))
     markup.add(types.InlineKeyboardButton(
         loc.get_text('settings_btn_choose_persona', current_lang),
@@ -150,13 +158,22 @@ async def create_settings_keyboard(user_id: int) -> types.InlineKeyboardMarkup:
     style_rows = [style_buttons[i:i + 2] for i in range(0, len(style_buttons), 2)]
     for row in style_rows:
         markup.add(*row)
+
+    # --- Секция Языка и Данных (НОВОЕ) ---
+    markup.add(types.InlineKeyboardButton("---", callback_data=CALLBACK_IGNORE))
+    markup.add(types.InlineKeyboardButton(
+        loc.get_text('settings_btn_data_management', current_lang),
+        callback_data=CALLBACK_DATA_MANAGEMENT_MENU
+    ))
+
     markup.add(types.InlineKeyboardButton(loc.get_text('settings_language_section', current_lang), callback_data=CALLBACK_IGNORE))
     lang_buttons = [
         types.InlineKeyboardButton(f"{'✅ ' if current_lang == 'ru' else ''}🇷🇺 Русский", callback_data=f"{CALLBACK_SETTINGS_LANG_PREFIX}ru"),
         types.InlineKeyboardButton(f"{'✅ ' if current_lang == 'en' else ''}🇺🇸 English", callback_data=f"{CALLBACK_SETTINGS_LANG_PREFIX}en")
     ]
     markup.add(*lang_buttons)
-    # Добавляем кнопку "Поддержать"
+
+    # --- Секция поддержки ---
     if DONATION_URL:
         markup.add(types.InlineKeyboardButton(
             loc.get_text('btn_support', current_lang),
@@ -392,4 +409,46 @@ def create_user_management_keyboard(user_to_manage_id: int, is_blocked: bool, la
     )
     
     markup.add(block_btn, reset_key_btn, back_btn)
+    return markup
+
+def create_panic_password_setup_keyboard(lang_code: str) -> types.InlineKeyboardMarkup:
+    """Создает клавиатуру для предложения установить пароль паники."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    yes_btn = types.InlineKeyboardButton("✅ " + loc.get_text('btn_confirm_delete', lang_code).split(',')[0], callback_data=CALLBACK_PANIC_SETUP_YES)
+    no_btn = types.InlineKeyboardButton("❌ " + loc.get_text('btn_cancel_delete', lang_code).split(',')[1].strip(), callback_data=CALLBACK_PANIC_SETUP_NO)
+    markup.add(yes_btn, no_btn)
+    return markup
+
+
+def create_data_management_keyboard(lang_code: str) -> types.InlineKeyboardMarkup:
+    """Создает клавиатуру для меню 'Управление данными'."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    archive_btn = types.InlineKeyboardButton(
+        loc.get_text('btn_archive_memory', lang_code),
+        callback_data=CALLBACK_ARCHIVE_MEMORY_START
+    )
+    clear_btn = types.InlineKeyboardButton(
+        loc.get_text('btn_clear_data', lang_code),
+        callback_data=CALLBACK_CLEAR_DATA_START
+    )
+    back_btn = types.InlineKeyboardButton(
+        loc.get_text('btn_back_to_settings', lang_code),
+        callback_data=CALLBACK_SETTINGS_BACK_TO_MAIN
+    )
+    markup.add(archive_btn, clear_btn, back_btn)
+    return markup
+
+
+def create_confirm_clear_data_keyboard(lang_code: str) -> types.InlineKeyboardMarkup:
+    """Создает клавиатуру для подтверждения полной очистки данных."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    confirm_btn = types.InlineKeyboardButton(
+        loc.get_text('btn_confirm_clear', lang_code),
+        callback_data=CALLBACK_CLEAR_DATA_CONFIRM
+    )
+    cancel_btn = types.InlineKeyboardButton(
+        loc.get_text('btn_cancel_clear', lang_code),
+        callback_data=CALLBACK_CLEAR_DATA_CANCEL
+    )
+    markup.add(confirm_btn, cancel_btn)
     return markup

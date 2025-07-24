@@ -43,7 +43,7 @@ from services import gemini_service
 from features import personal_account
 from logger_config import get_logger
 from utils import text_helpers as th
-from .decorators import session_required # <-- ИМПОРТИРУЕМ ДЕКОРАТОР
+from .decorators import session_required
 
 logger = get_logger(__name__)
 
@@ -52,7 +52,14 @@ logger = get_logger(__name__)
 async def handle_start(message: types.Message, bot: AsyncTeleBot):
     """
     Обработчик команды /start. Главная точка входа в бота.
-    Маршрутизирует пользователя в зависимости от его ZK-статуса.
+
+    Маршрутизирует пользователя в зависимости от его статуса в системе
+    (новый пользователь, пользователь с установленным паролем,
+    пользователь с заблокированной сессией).
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
     """
     user = message.from_user
     user_id = user.id
@@ -76,7 +83,16 @@ async def handle_start(message: types.Message, bot: AsyncTeleBot):
 
 
 async def handle_logout(message: types.Message, bot: AsyncTeleBot):
-    """(НОВАЯ КОМАНДА) Обработчик команды /logout. Блокирует сессию пользователя."""
+    """
+    Обработчик команды /logout. Блокирует сессию пользователя.
+
+    Удаляет ключ сессии из оперативной памяти, требуя повторного ввода пароля
+    при следующем действии.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     if user_id in tg_helpers.user_session_keys:
         del tg_helpers.user_session_keys[user_id]
@@ -87,7 +103,13 @@ async def handle_logout(message: types.Message, bot: AsyncTeleBot):
 
 
 async def handle_cancel(message: types.Message, bot: AsyncTeleBot):
-    """(НОВАЯ КОМАНДА) Обработчик команды /cancel. Сбрасывает любое текущее состояние."""
+    """
+    Обработчик команды /cancel. Сбрасывает любое текущее состояние.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     await bot.delete_state(user_id, message.chat.id)
     lang_code = await db_manager.get_user_language(user_id)
@@ -96,15 +118,27 @@ async def handle_cancel(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_profile(message: types.Message, bot: AsyncTeleBot):
-    """(НОВАЯ КОМАНДА) Обработчик команды /profile. Начинает процесс заполнения анкеты."""
-    # TODO: Логика анкеты
-    await bot.reply_to(message, "Функционал профиля в разработке.")
+    """
+    Обработчик команды /profile. Начинает процесс редактирования/просмотра профиля.
 
-# --- Команды, требующие активной сессии (ОРИГИНАЛЬНЫЕ КОМАНДЫ + ПРОВЕРКА СЕССИИ) ---
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
+    await personal_account.get_personal_account_info(message, bot)
+
+
+# --- Команды, требующие активной сессии ---
 
 @session_required
 async def handle_help(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /help."""
+    """
+    Обработчик команды /help. Отправляет краткую справку по командам.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     help_text = loc.get_text('cmd_help_text', lang_code)
@@ -117,7 +151,13 @@ async def handle_help(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_reset(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /reset."""
+    """
+    Обработчик команды /reset. Сбрасывает краткосрочную память (контекст).
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     await bot.delete_state(user_id, message.chat.id)
     active_dialog_id = await db_manager.get_active_dialog_id(user_id)
@@ -131,7 +171,13 @@ async def handle_reset(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /set_api_key."""
+    """
+    Обработчик команды /set_api_key. Начинает процесс установки API ключа.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = loc.get_text('set_api_key_prompt', lang_code)
@@ -140,7 +186,13 @@ async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_history(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /history."""
+    """
+    Обработчик команды /history. Отправляет календарь для просмотра истории.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     calendar_markup = mk.create_calendar_keyboard()
@@ -150,7 +202,13 @@ async def handle_history(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_settings(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /settings."""
+    """
+    Обработчик команды /settings. Открывает меню настроек.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     settings_markup = await mk.create_settings_keyboard(user_id)
@@ -158,7 +216,13 @@ async def handle_settings(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /dialogs."""
+    """
+    Обработчик команды /dialogs. Открывает меню управления диалогами.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = f"{loc.get_text('dialogs_menu_title', lang_code)}\n\n{loc.get_text('dialogs_menu_desc', lang_code)}"
@@ -167,30 +231,33 @@ async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_memorize_file(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /memorize_file для загрузки документа в память."""
+    """
+    Обработчик команды /memorize_file для загрузки документа в память.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     
-    # Получаем название текущего диалога для отображения в сообщении
-    active_dialog_id = await db_manager.get_active_dialog_id(user_id)
     dialog_info = await db_manager.get_user_context_info(user_id)
     dialog_name = dialog_info.get('dialog_name', 'N/A') if dialog_info else 'N/A'
-
-    if not active_dialog_id:
-        # Эта проверка на всякий случай, т.к. сессия должна гарантировать наличие диалога
-        await bot.reply_to(message, "Ошибка: не найден активный диалог.")
-        return
-
-    # Устанавливаем состояние ожидания документа
+    
     await bot.set_state(user_id, settings.STATE_WAITING_FOR_DOCUMENT, message.chat.id)
     
-    # Отправляем пользователю инструкцию
     prompt_text = loc.get_text('memory_prompt_file', lang_code).format(dialog_name=dialog_name)
     await bot.send_message(user_id, prompt_text, reply_markup=types.ReplyKeyboardRemove())
 
 @session_required
 async def handle_translate(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /translate."""
+    """
+    Обработчик команды /translate. Открывает меню выбора языка для перевода.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     text = loc.get_text('translate_prompt', lang_code)
@@ -199,14 +266,19 @@ async def handle_translate(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_personal_account_button(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик нажатия на кнопку 'Личный кабинет'."""
+    """
+    Обработчик нажатия на кнопку 'Личный кабинет'.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
 
     await tg_helpers.send_typing_action(bot, user_id)
     
-    # Передаем ключ сессии для расшифровки данных
     info_text = await personal_account.get_personal_account_info(user_id, fernet_instance)
     
     main_keyboard = mk.create_main_keyboard(lang_code, user_id)
@@ -216,36 +288,31 @@ async def handle_personal_account_button(message: types.Message, bot: AsyncTeleB
     )
 
 @session_required
-async def handle_archive_memory(message: types.Message, bot: AsyncTeleBot):
+async def handle_data_management(message: types.Message, bot: AsyncTeleBot):
     """
-    Обработчик команды /archive_memory. Начинает процесс архивации старых сообщений.
-
-    Запрашивает у пользователя количество дней, старше которых сообщения
-    должны быть архивированы, и переводит бота в соответствующее состояние.
+    Обработчик команд /mydata, /archive. Открывает меню управления данными.
 
     Args:
-        message (types.Message): Объект сообщения Telegram.
-        bot (AsyncTeleBot): Экземпляр AsyncTeleBot.
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
     """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
 
-    fernet_instance = tg_helpers.user_session_keys.get(user_id)
-    if not fernet_instance:
-        await bot.reply_to(message, loc.get_text('zk_user_is_locked', lang_code))
-        return
+    text = loc.get_text('data_management_title', lang_code)
+    markup = mk.create_data_management_keyboard(lang_code)
 
-    api_key_set = await db_manager.is_api_key_set(user_id)
-    if not api_key_set:
-        await bot.reply_to(message, loc.get_text('api_key_needed_for_feature', lang_code))
-        return
-
-    await bot.set_state(user_id, settings.STATE_WAITING_FOR_ARCHIVE_PERIOD, message.chat.id)
-    await bot.reply_to(message, loc.get_text('memory_archiving_prompt', lang_code), reply_markup=types.ReplyKeyboardRemove())
+    await bot.send_message(user_id, text, reply_markup=markup)
 
 @session_required
 async def handle_usage(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /usage для отображения статистики расходов."""
+    """
+    Обработчик команды /usage для отображения статистики расходов токенов.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
@@ -272,7 +339,6 @@ async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     cost_today_str = f"{cost_today:.4f}".replace('.', '\\.')
     cost_month_str = f"{cost_month:.4f}".replace('.', '\\.')
     
-    # Экранируем ВСЕ текстовые части перед сборкой
     title = th.escape_markdown(loc.get_text('usage_title', lang_code))
     today_header = th.escape_markdown(loc.get_text('usage_today_header', lang_code))
     month_header = th.escape_markdown(loc.get_text('usage_month_header', lang_code))
@@ -312,7 +378,13 @@ async def handle_usage(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_full_guide(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /help_guide, отправляет полную справку."""
+    """
+    Обработчик команды /help_guide, отправляет полную справку.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     await tg_helpers.send_typing_action(bot, user_id)
@@ -321,7 +393,13 @@ async def handle_full_guide(message: types.Message, bot: AsyncTeleBot):
 
 @session_required
 async def handle_api_key_info(message: types.Message, bot: AsyncTeleBot):
-    """Обработчик команды /apikey_info, отправляет секцию про API ключ."""
+    """
+    Обработчик команды /apikey_info, отправляет секцию про API ключ.
+
+    Args:
+        message: Объект сообщения Telegram.
+        bot: Экземпляр AsyncTeleBot.
+    """
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     await tg_helpers.send_typing_action(bot, user_id)
@@ -331,13 +409,11 @@ async def handle_api_key_info(message: types.Message, bot: AsyncTeleBot):
 
 def register_command_handlers(bot: AsyncTeleBot):
     """Регистрирует все обработчики команд и кнопок-синонимов."""
-    # Управляющие команды
     bot.register_message_handler(handle_start, commands=['start'], pass_bot=True)
     bot.register_message_handler(handle_logout, commands=['logout', 'lock'], pass_bot=True)
     bot.register_message_handler(handle_cancel, commands=['cancel'], pass_bot=True)
     bot.register_message_handler(handle_profile, commands=['profile'], pass_bot=True)
 
-    # Основные команды из оригинального файла
     bot.register_message_handler(handle_help, commands=['help'], pass_bot=True)
     bot.register_message_handler(handle_full_guide, commands=['help_guide', 'guide'], pass_bot=True)
     bot.register_message_handler(handle_api_key_info, commands=['apikey_info', 'key_info'], pass_bot=True)
@@ -349,9 +425,8 @@ def register_command_handlers(bot: AsyncTeleBot):
     bot.register_message_handler(handle_usage, commands=['usage'], pass_bot=True)
     bot.register_message_handler(handle_dialogs, commands=['dialogs'], pass_bot=True)
     bot.register_message_handler(handle_memorize_file, commands=['memorize', 'memorize_file'], pass_bot=True)
-    bot.register_message_handler(handle_archive_memory, commands=['archive_memory', 'archive'], pass_bot=True) # <-- НОВАЯ КОМАНДА
+    bot.register_message_handler(handle_data_management, commands=['archive_memory', 'archive', 'mydata'], pass_bot=True)
 
-    # Регистрация кнопок-синонимов из оригинального файла
     bot.register_message_handler(handle_dialogs,
                                  func=lambda msg: msg.text in [loc.get_text('btn_dialogs', 'ru'),
                                                                loc.get_text('btn_dialogs', 'en')], pass_bot=True)
