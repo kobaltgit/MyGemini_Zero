@@ -85,14 +85,21 @@ However, the **context remains protected**:
 
 We chose this approach to provide you with a powerful search tool while maintaining the core principle: **no one but you holds the key to your complete "digital vault"**.
 
+#### Panic Password
+
+For emergency situations, you can set an optional *panic password*. If you enter it instead of your main password to unlock the session, the bot will pretend to unlock successfully, but in reality, it will **immediately and irreversibly delete all your message history and long-term memory content**.
+
+This is a "plausible deniability" feature that provides an extra layer of protection in critical situations.
+
 ---
 
 ## 🚀 Key Features
 
-*   **🧠 Long-term memory:** Remembers the context of all your dialogues and documents, allowing you to refer to past information.
-*   **🔐 Zero-Knowledge Architecture:** Cryptographic data protection with the user's master password.
+*   **🧠 Long-term memory:** Remembers the context of all your dialogues. You can refer to past information and **upload files** (`.txt`, `.md`) directly into a dialogue's memory using the `/memorize` command.
+*   **🔐 Zero-Knowledge Architecture:** Cryptographic data protection with the user's master password, plus an optional **panic password** for emergency data deletion.
 *   **👤 Deep personalization:** Accounts for your profile (role, goals, style) to adapt responses.
 *   **🗂️ Multi-context dialogues:** Create, switch between, and rename independent dialogues to prevent different topics' contexts from overlapping.
+*   **📄 Data Management:** You can **archive old messages**, replacing them with concise summaries to save space, or **completely erase all your data** without deleting your account.
 *   **🖼️ Image analysis:** Recognition and description of image content with the ability to ask clarifying questions.
 *   **🌐 Internet search:** Automatic access to Google for providing up-to-date information (for supported models).
 *   **👑 Powerful admin panel:** For owners of their own instances — complete control over the bot.
@@ -170,6 +177,8 @@ After launching, find the bot in Telegram and send the `/start` command. It will
 *   `/usage` - Show Google API token usage statistics.
 *   `/history` - View message history in the current dialog.
 *   `/reset` - Reset the *short-term* context of the current dialog (does not affect long-term memory).
+*   `/memorize` - Upload a text file (`.txt`, `.md`) into long-term memory.
+*   `/archive` - Archive old messages in the current dialog.
 
 
 ---
