@@ -72,15 +72,24 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
            "✅ После установки ключа через /set_api_key ты сможешь полноценно общаться со мной.\n\n"
            "Используй /help_guide, чтобы увидеть полный список моих возможностей.",
         'cmd_help_text': "🆘 *Краткая справка по командам*\n\n"
-                 "*/start* - Перезапустить бота.\n"
-                 "*/reset* - Сбросить контекст текущего диалога.\n"
-                 "*/set_api_key* - Установить или обновить API ключ.\n"
-                 "*/settings* - Открыть меню настроек.\n"
-                 "*/dialogs* - Управление диалогами.\n"
-                 "*/history* - Посмотреть историю сообщений.\n"
-                 "*/usage* - Статистика расходов токенов.\n\n"
-                 "➡️ Используй /help_guide для получения **полного руководства** по всем функциям.\n"
-                 "🔑 Используй /apikey_info для получения инструкции по **созданию API ключа**.",
+                 "--- *Основное* ---\n"
+                 "*/start* - Перезапуск бота / разблокировка сессии\n"
+                 "*/logout* - Заблокировать сессию (требует пароль)\n"
+                 "*/profile* - Просмотреть и изменить свой профиль\n"
+                 "*/usage* - Статистика расходов токенов\n"
+                 "\n"
+                 "--- *Управление Памятью* ---\n"
+                 "*/dialogs* - Управление диалогами (контекстами)\n"
+                 "*/reset* - Сбросить краткосрочный контекст диалога\n"
+                 "*/history* - Посмотреть историю сообщений\n"
+                 "*/memorize* - Запомнить содержимое файла\n"
+                 "*/archive* - Архивировать старую память\n"
+                 "\n"
+                 "--- *Настройки и Помощь* ---\n"
+                 "*/settings* - Открыть меню настроек\n"
+                 "*/set_api_key* - Установить/обновить API ключ\n"
+                 "*/help_guide* - 📖 Полное руководство по функциям\n"
+                 "*/apikey_info* - 🔑 Инструкция по созданию API ключа",
         # --- Настройки ---
         'settings_title': "⚙️ *Настройки бота*",
         'settings_style_section': "--- Стиль общения бота ---",
@@ -334,15 +343,24 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
            "✅ After setting the key via /set_api_key, you'll be able to chat with me.\n\n"
            "Use /help_guide to see a full list of my features.",
         'cmd_help_text': "🆘 *Quick Command Reference*\n\n"
-                 "*/start* - Restart the bot.\n"
-                 "*/reset* - Clear the current dialog context.\n"
-                 "*/set_api_key* - Set or update your API key.\n"
-                 "*/settings* - Open the settings menu.\n"
-                 "*/dialogs* - Manage your dialogs.\n"
-                 "*/history* - View message history.\n"
-                 "*/usage* - Token usage statistics.\n\n"
-                 "➡️ Use /help_guide for the **full user manual**.\n"
-                 "🔑 Use /apikey_info for instructions on **creating an API key**.",
+                 "--- *Core* ---\n"
+                 "*/start* - Restart the bot / unlock session\n"
+                 "*/logout* - Lock the session (requires password)\n"
+                 "*/profile* - View and edit your profile\n"
+                 "*/usage* - Token usage statistics\n"
+                 "\n"
+                 "--- *Memory Management* ---\n"
+                 "*/dialogs* - Manage your dialogs (contexts)\n"
+                 "*/reset* - Clear the short-term dialog context\n"
+                 "*/history* - View message history\n"
+                 "*/memorize* - Memorize the content of a file\n"
+                 "*/archive* - Archive old memory\n"
+                 "\n"
+                 "--- *Settings & Help* ---\n"
+                 "*/settings* - Open the settings menu\n"
+                 "*/set_api_key* - Set or update your API key\n"
+                 "*/help_guide* - 📖 Full user manual\n"
+                 "*/apikey_info* - 🔑 How to create an API key",
         # --- Settings ---
         'settings_title': "⚙️ *Bot Settings*",
         'settings_style_section': "--- Bot Communication Style ---",
