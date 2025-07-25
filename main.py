@@ -17,7 +17,7 @@ import asyncio
 import signal
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 from telebot.asyncio_storage import StateMemoryStorage
@@ -81,7 +81,7 @@ async def successful_payment_callback(message: types.Message, bot: AsyncTeleBot)
     plan = next((p for p in settings.SUBSCRIPTION_PLANS if p['id'] == payload), None)
 
     if plan:
-        end_date = datetime.now(datetime.timezone.utc) + timedelta(days=plan['duration_days'])
+        end_date = datetime.now(timezone.utc) + timedelta(days=plan['duration_days'])
         await db_manager.update_user_subscription(user_id, 'active', end_date.isoformat())
         
         main_logger.info(f"Пользователь {user_id} успешно оплатил подписку '{plan['id']}'.", extra={'user_id': str(user_id)})

@@ -221,7 +221,7 @@ SUBSCRIPTION_PLANS = [
         "id": "1_month_sub",
         "title": "MyGemini Zero - 1 месяц",
         "description": "Полный доступ ко всем функциям на 30 дней.",
-        "price_amount": 5000,  # Цена в копейках (299 = 2.99 USD/EUR/etc.)
+        "price_amount": 50000,  # Цена в копейках (299 = 2.99 USD/EUR/etc.)
         "price_currency": "RUB", # Валюта
         "duration_days": 30,
     },
