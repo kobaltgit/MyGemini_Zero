@@ -228,6 +228,49 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'btn_usage': "📊 Расходы",
         'btn_admin_panel': "👑 Админ-панель",
         'btn_support': "❤️ Поддержать автора",
+        
+        # --- НОВЫЙ РАЗДЕЛ: Подписка ---
+        'welcome_new_user_subscribed': "👋 **Добро пожаловать в MyGemini Zero!**\n\n"
+                                 "Это ваш персональный, приватный ИИ-ассистент с полноценной памятью, построенный на принципе Zero-Knowledge.\n\n"
+                                 "Для доступа ко всем функциям требуется **активная подписка**. Она дает вам:\n"
+                                 "🔐 **Максимальную приватность:** Ваши данные шифруются паролем, который знаете только вы.\n"
+                                 "🧠 **Долговременную память:** Бот помнит контекст всех ваших диалогов и файлов.\n"
+                                 "⚙️ **Удобство \"под ключ\":** Вы получаете готовый, стабильный и развивающийся сервис без необходимости что-либо настраивать.\n\n"
+                                 "Нажмите кнопку ниже, чтобы оформить подписку.\n\n"
+                                 "--- *Альтернативы* ---\n"
+                                 "🤖 Если вы не готовы к покупке, можете воспользоваться нашим [бесплатным ботом MyGemini](https://t.me/mgem_bot) (без Zero-Knowledge) или [развернуть этого бота самостоятельно](https://github.com/kobaltgit/MyGemini_Zero) с GitHub.",
+        'btn_subscribe': "✅ Оформить подписку",
+        'subscription_needed': "🚫 **Доступ ограничен.**\n\nДля использования этой функции требуется активная подписка. Пожалуйста, оформите ее, чтобы получить полный доступ ко всем возможностям бота.",
+        'subscription_status_title': "💳 *Статус вашей подписки*",
+        'sub_status_active': "Активна",
+        'sub_status_expired': "Истекла",
+        'sub_status_none': "Не активна",
+        'sub_ends_on': "Действует до:",
+        'sub_no_active_sub': "У вас нет активной подписки.",
+        'payment_successful': "✅ **Оплата прошла успешно!**\n\nВаша подписка активирована. Спасибо за поддержку!\n\nТеперь необходимо завершить настройку. Пожалуйста, используйте команду /start, чтобы создать мастер-пароль.",
+        'payment_pre_checkout_error': "❌ Не удалось обработать платеж. Пожалуйста, попробуйте снова или свяжитесь с поддержкой.",
+
+        # --- NEW SECTION: Subscription ---
+        'welcome_new_user_subscribed': "👋 **Welcome to MyGemini Zero!**\n\n"
+                                 "This is your personal, private AI assistant with persistent memory, built on the Zero-Knowledge principle.\n\n"
+                                 "An **active subscription** is required for full access. It gives you:\n"
+                                 "🔐 **Maximum Privacy:** Your data is encrypted with a password only you know.\n"
+                                 "🧠 **Long-Term Memory:** The bot remembers the context of all your dialogs and files.\n"
+                                 "⚙️ **Turnkey Convenience:** You get a ready-to-use, stable, and evolving service with no setup required.\n\n"
+                                 "Press the button below to subscribe.\n\n"
+                                 "--- *Alternatives* ---\n"
+                                 "🤖 If you're not ready to purchase, you can use our [free MyGemini bot](https://t.me/mgem_bot) (without Zero-Knowledge) or [deploy this bot yourself](https://github.com/kobaltgit/MyGemini_Zero) from GitHub.",
+        'btn_subscribe': "✅ Subscribe Now",
+        'subscription_needed': "🚫 **Access Denied.**\n\nAn active subscription is required to use this feature. Please subscribe to get full access to all of the bot's capabilities.",
+        'subscription_status_title': "💳 *Your Subscription Status*",
+        'sub_status_active': "Active",
+        'sub_status_expired': "Expired",
+        'sub_status_none': "Not Active",
+        'sub_ends_on': "Valid until:",
+        'sub_no_active_sub': "You do not have an active subscription.",
+        'payment_successful': "✅ **Payment Successful!**\n\nYour subscription is now active. Thank you for your support!\n\nPlease use the /start command to complete the setup by creating your master password.",
+        'payment_pre_checkout_error': "❌ Could not process payment. Please try again or contact support.",
+
         # --- Секция админа ---
         'admin': {
             'panel_title': "👑 *Админ-панель*",

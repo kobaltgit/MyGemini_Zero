@@ -36,7 +36,8 @@ from config.settings import (
     CALLBACK_DATA_MANAGEMENT_MENU, CALLBACK_ARCHIVE_MEMORY_START,
     CALLBACK_CLEAR_DATA_START, CALLBACK_CLEAR_DATA_CONFIRM, CALLBACK_CLEAR_DATA_CANCEL,
     CALLBACK_PANIC_SETUP_YES, CALLBACK_PANIC_SETUP_NO,
-    STATE_ZK_WAITING_FOR_PANIC_SETUP
+    STATE_ZK_WAITING_FOR_PANIC_SETUP, STATE_ZK_WAITING_FOR_PANIC_CONFIRM,
+    CALLBACK_SUBSCRIBE_PREFIX
 )
 from features import profile_manager
 from features.profile_manager import QUESTIONNAIRE, ask_question
@@ -55,6 +56,35 @@ logger = get_logger(__name__)
 
 
 # --- Основной обработчик ---
+
+async def handle_subscribe_button(bot: AsyncTeleBot, call: types.CallbackQuery, lang_code: str):
+    """
+    Обрабатывает нажатие на кнопку 'Оформить подписку' и отправляет инвойс.
+    """
+    if not settings.PAYMENT_PROVIDER_TOKEN:
+        logger.error("PAYMENT_PROVIDER_TOKEN не установлен в .env! Невозможно создать инвойс.", extra={'user_id': str(call.from_user.id)})
+        await tg_helpers.answer_callback_query(bot, call, "Сервис оплаты временно недоступен.", show_alert=True)
+        return
+
+    plan_id = call.data.split(':')[1]
+    plan = next((p for p in settings.SUBSCRIPTION_PLANS if p['id'] == plan_id), None)
+
+    if not plan:
+        logger.error(f"Попытка покупки несуществующего тарифного плана: {plan_id}", extra={'user_id': str(call.from_user.id)})
+        await tg_helpers.answer_callback_query(bot, call, "Выбранный тарифный план не найден.", show_alert=True)
+        return
+    
+    # Создаем и отправляем инвойс
+    await bot.send_invoice(
+        chat_id=call.from_user.id,
+        title=plan['title'],
+        description=plan['description'],
+        invoice_payload=plan['id'],  # Уникальный ID для этого платежа
+        provider_token=settings.PAYMENT_PROVIDER_TOKEN,
+        currency=plan['price_currency'],
+        prices=[types.LabeledPrice(label=plan['title'], amount=plan['price_amount'])]
+    )
+    await tg_helpers.answer_callback_query(bot, call)
 
 async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
     """
@@ -103,6 +133,8 @@ async def handle_callback_query(call: types.CallbackQuery, bot: AsyncTeleBot):
     try:
         if data == CALLBACK_IGNORE:
             await tg_helpers.answer_callback_query(bot, call)
+        elif data.startswith(CALLBACK_SUBSCRIBE_PREFIX):
+            await handle_subscribe_button(bot, call, lang_code)
         elif data in [CALLBACK_PANIC_SETUP_YES, CALLBACK_PANIC_SETUP_NO]:
             await handle_panic_password_setup(bot, call, lang_code)
         elif data == CALLBACK_DATA_MANAGEMENT_MENU:

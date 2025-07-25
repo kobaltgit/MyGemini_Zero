@@ -24,6 +24,7 @@ load_dotenv()
 
 # --- Telegram Bot Settings ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Необходимо установить переменную окружения BOT_TOKEN")
 
@@ -214,8 +215,30 @@ TRANSLATE_LANGUAGES = {
     'fr': '🇫🇷 Французский', 'es': '🇪🇸 Испанский', 'it': '🇮🇹 Итальянский',
 }
 
+# --- НОВЫЙ РАЗДЕЛ: Настройки подписки ---
+SUBSCRIPTION_PLANS = [
+    {
+        "id": "1_month_sub",
+        "title": "MyGemini Zero - 1 месяц",
+        "description": "Полный доступ ко всем функциям на 30 дней.",
+        "price_amount": 5000,  # Цена в копейках (299 = 2.99 USD/EUR/etc.)
+        "price_currency": "RUB", # Валюта
+        "duration_days": 30,
+    },
+    # Можно добавить другие планы, например, на год
+    # {
+    #     "id": "1_year_sub",
+    #     "title": "MyGemini Zero - 1 год",
+    #     "description": "Полный доступ ко всем функциям на 365 дней со скидкой.",
+    #     "price_amount": 2990,
+    #     "price_currency": "RUB",
+    #     "duration_days": 365,
+    # },
+]
+
 # --- Callback Data Prefixes ---
 CALLBACK_IGNORE = 'ignore'
+CALLBACK_SUBSCRIBE_PREFIX = 'subscribe:'
 CALLBACK_REPORT_ERROR = 'report_error'
 # Settings
 CALLBACK_SETTINGS_STYLE_PREFIX = 'settings_style:'

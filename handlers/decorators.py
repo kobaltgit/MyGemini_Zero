@@ -26,9 +26,48 @@ from config.settings import ADMIN_USER_ID
 from database import db_manager
 from utils import localization as loc
 from logger_config import get_logger
+from config.settings import SUBSCRIPTION_PLANS, CALLBACK_SUBSCRIBE_PREFIX
 
 logger = get_logger(__name__)
 
+def subscription_required(func):
+    """
+    Декоратор для проверки, активна ли подписка пользователя.
+    Если нет, отправляет сообщение с предложением оформить подписку.
+    """
+    @wraps(func)
+    async def wrapper(message_or_call: types.Message | types.CallbackQuery, *args, **kwargs):
+        from . import telegram_helpers as tg_helpers # Локальный импорт для избежания циклов
+
+        user_id = message_or_call.from_user.id
+        subscription = await db_manager.get_user_subscription_status(user_id)
+
+        if subscription["status"] == 'active':
+            return await func(message_or_call, *args, **kwargs)
+        else:
+            lang_code = await db_manager.get_user_language(user_id)
+            
+            # Создаем клавиатуру с кнопкой подписки
+            plan = SUBSCRIPTION_PLANS[0] # Берем первый (и пока единственный) план
+            markup = types.InlineKeyboardMarkup()
+            sub_button = types.InlineKeyboardButton(
+                text=loc.get_text('btn_subscribe', lang_code),
+                callback_data=f"{CALLBACK_SUBSCRIBE_PREFIX}{plan['id']}"
+            )
+            markup.add(sub_button)
+
+            text = loc.get_text('subscription_needed', lang_code)
+            
+            bot = args[0] if isinstance(args[0], AsyncTeleBot) else kwargs.get('bot')
+            if bot:
+                if isinstance(message_or_call, types.Message):
+                    await bot.reply_to(message_or_call, text, reply_markup=markup)
+                elif isinstance(message_or_call, types.CallbackQuery):
+                    await bot.send_message(user_id, text, reply_markup=markup)
+                    await tg_helpers.answer_callback_query(bot, message_or_call)
+            return
+            
+    return wrapper
 
 def admin_required(func):
     """

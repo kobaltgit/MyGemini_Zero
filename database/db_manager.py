@@ -168,7 +168,9 @@ def setup_database_sync():
                 'encryption_salt': 'BLOB',
                 'api_key': 'BLOB',
                 'last_session_ts': 'TEXT',
-                'panic_password_hash': 'BLOB'
+                'panic_password_hash': 'BLOB',
+                'subscription_status': "TEXT DEFAULT 'none' NOT NULL", # 'none', 'active', 'expired'
+                'subscription_end_date': 'TEXT'
             }
             missing_cols = required_columns.keys() - user_columns
             for col in missing_cols:
@@ -879,3 +881,36 @@ async def clear_user_content(user_id: int, fernet_instance: Fernet):
     # 4. Создаем новый диалог по умолчанию
     await create_dialog(user_id, "Основной диалог", set_active=True)
     db_logger.info(f"Создан новый основной диалог для user_id {user_id} после очистки.")
+
+async def get_user_subscription_status(user_id: int) -> Dict[str, Any]:
+    """
+    Получает статус и дату окончания подписки пользователя.
+    Автоматически обновляет статус на 'expired', если дата прошла.
+    """
+    query = "SELECT subscription_status, subscription_end_date FROM users WHERE user_id = ?"
+    result = await _execute_query(query, (user_id,), fetch_one=True)
+
+    if not result or not result['subscription_status']:
+        return {"status": "none", "end_date": None}
+
+    status = result['subscription_status']
+    end_date_str = result['subscription_end_date']
+    end_date = None
+
+    if end_date_str:
+        end_date = datetime.datetime.fromisoformat(end_date_str).date()
+        if status == 'active' and end_date < datetime.date.today():
+            status = 'expired'
+            # Обновляем статус в базе данных асинхронно
+            asyncio.create_task(
+                update_user_subscription(user_id, 'expired', end_date.isoformat())
+            )
+
+    return {"status": status, "end_date": end_date}
+
+
+async def update_user_subscription(user_id: int, status: str, end_date_iso: str):
+    """Обновляет статус и дату окончания подписки пользователя."""
+    query = "UPDATE users SET subscription_status = ?, subscription_end_date = ? WHERE user_id = ?"
+    await _execute_query(query, (status, end_date_iso, user_id), is_write_operation=True)
+    db_logger.info(f"Статус подписки для пользователя {user_id} обновлен на '{status}' до {end_date_iso}.")

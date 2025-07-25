@@ -43,7 +43,7 @@ from services import gemini_service
 from features import personal_account
 from logger_config import get_logger
 from utils import text_helpers as th
-from .decorators import session_required
+from .decorators import session_required, subscription_required
 
 logger = get_logger(__name__)
 
@@ -68,6 +68,21 @@ async def handle_start(message: types.Message, bot: AsyncTeleBot):
     await db_manager.add_or_update_user(user.id, user.username, user.first_name, user.last_name)
     lang_code = await db_manager.get_user_language(user_id)
     
+    subscription = await db_manager.get_user_subscription_status(user_id)
+
+    # Если у пользователя нет активной подписки, показываем "продающее" сообщение
+    if subscription['status'] != 'active':
+        plan = settings.SUBSCRIPTION_PLANS[0]
+        markup = types.InlineKeyboardMarkup()
+        sub_button = types.InlineKeyboardButton(
+            text=loc.get_text('btn_subscribe', lang_code),
+            callback_data=f"{settings.CALLBACK_SUBSCRIBE_PREFIX}{plan['id']}"
+        )
+        markup.add(sub_button)
+        await bot.send_message(user_id, loc.get_text('welcome_new_user_subscribed', lang_code), reply_markup=markup, disable_web_page_preview=True)
+        return
+
+    # Если подписка есть, продолжаем стандартный ZK-onboarding
     await bot.delete_state(user_id, message.chat.id)
 
     if not await db_manager.is_master_password_set(user_id):
@@ -116,6 +131,7 @@ async def handle_cancel(message: types.Message, bot: AsyncTeleBot):
     main_keyboard = mk.create_main_keyboard(lang_code, user_id) if user_id in tg_helpers.user_session_keys else types.ReplyKeyboardRemove()
     await bot.send_message(message.chat.id, "Действие отменено.", reply_markup=main_keyboard)
 
+@subscription_required
 @session_required
 async def handle_profile(message: types.Message, bot: AsyncTeleBot):
     """
@@ -149,6 +165,7 @@ async def handle_help(message: types.Message, bot: AsyncTeleBot):
         if support_markup:
             await bot.send_message(user_id, loc.get_text('support_prompt', lang_code), reply_markup=support_markup)
 
+@subscription_required
 @session_required
 async def handle_reset(message: types.Message, bot: AsyncTeleBot):
     """
@@ -169,6 +186,7 @@ async def handle_reset(message: types.Message, bot: AsyncTeleBot):
     main_keyboard = mk.create_main_keyboard(lang_code, user_id)
     await bot.reply_to(message, reset_text, reply_markup=main_keyboard)
 
+@subscription_required
 @session_required
 async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
     """
@@ -184,6 +202,7 @@ async def handle_set_api_key(message: types.Message, bot: AsyncTeleBot):
     await bot.set_state(user_id, STATE_WAITING_FOR_API_KEY, message.chat.id)
     await bot.reply_to(message, text, reply_markup=types.ReplyKeyboardRemove())
 
+@subscription_required
 @session_required
 async def handle_history(message: types.Message, bot: AsyncTeleBot):
     """
@@ -200,6 +219,7 @@ async def handle_history(message: types.Message, bot: AsyncTeleBot):
     await bot.send_message(user_id, text, reply_markup=calendar_markup)
     await bot.set_state(user_id, STATE_WAITING_FOR_HISTORY_DATE, message.chat.id)
 
+@subscription_required
 @session_required
 async def handle_settings(message: types.Message, bot: AsyncTeleBot):
     """
@@ -214,6 +234,7 @@ async def handle_settings(message: types.Message, bot: AsyncTeleBot):
     settings_markup = await mk.create_settings_keyboard(user_id)
     await bot.send_message(user_id, loc.get_text('settings_title', lang_code), reply_markup=settings_markup)
 
+@subscription_required
 @session_required
 async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
     """
@@ -229,6 +250,7 @@ async def handle_dialogs(message: types.Message, bot: AsyncTeleBot):
     dialogs_keyboard = await mk.create_dialogs_menu_keyboard(user_id)
     await bot.send_message(user_id, text, reply_markup=dialogs_keyboard)
 
+@subscription_required
 @session_required
 async def handle_memorize_file(message: types.Message, bot: AsyncTeleBot):
     """
@@ -249,6 +271,7 @@ async def handle_memorize_file(message: types.Message, bot: AsyncTeleBot):
     prompt_text = loc.get_text('memory_prompt_file', lang_code).format(dialog_name=dialog_name)
     await bot.send_message(user_id, prompt_text, reply_markup=types.ReplyKeyboardRemove())
 
+@subscription_required
 @session_required
 async def handle_translate(message: types.Message, bot: AsyncTeleBot):
     """
@@ -264,6 +287,7 @@ async def handle_translate(message: types.Message, bot: AsyncTeleBot):
     lang_markup = mk.create_language_selection_keyboard()
     await bot.send_message(user_id, text, reply_markup=lang_markup)
 
+@subscription_required
 @session_required
 async def handle_personal_account_button(message: types.Message, bot: AsyncTeleBot):
     """
@@ -287,6 +311,7 @@ async def handle_personal_account_button(message: types.Message, bot: AsyncTeleB
         reply_markup=main_keyboard
     )
 
+@subscription_required
 @session_required
 async def handle_data_management(message: types.Message, bot: AsyncTeleBot):
     """
@@ -304,6 +329,7 @@ async def handle_data_management(message: types.Message, bot: AsyncTeleBot):
 
     await bot.send_message(user_id, text, reply_markup=markup)
 
+@subscription_required
 @session_required
 async def handle_usage(message: types.Message, bot: AsyncTeleBot):
     """
@@ -406,11 +432,48 @@ async def handle_api_key_info(message: types.Message, bot: AsyncTeleBot):
     guide_text = guide_manager.get_guide_section('API_KEY', lang_code)
     await tg_helpers.send_long_message(bot, user_id, guide_text)
 
+async def handle_subscription(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обработчик команды /subscription. Показывает статус подписки.
+    """
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    subscription = await db_manager.get_user_subscription_status(user_id)
+    
+    status_map = {
+        'active': loc.get_text('sub_status_active', lang_code),
+        'expired': loc.get_text('sub_status_expired', lang_code),
+        'none': loc.get_text('sub_status_none', lang_code)
+    }
+    
+    status_text = status_map.get(subscription['status'], subscription['status'])
+    
+    if subscription['status'] == 'active' and subscription['end_date']:
+        end_date_str = subscription['end_date'].strftime('%d.%m.%Y')
+        text = (f"{loc.get_text('subscription_status_title', lang_code)}\n\n"
+                f"**Статус:** {status_text}\n"
+                f"**{loc.get_text('sub_ends_on', lang_code)}** {end_date_str}")
+    else:
+        plan = settings.SUBSCRIPTION_PLANS[0]
+        markup = types.InlineKeyboardMarkup()
+        sub_button = types.InlineKeyboardButton(
+            text=loc.get_text('btn_subscribe', lang_code),
+            callback_data=f"{settings.CALLBACK_SUBSCRIBE_PREFIX}{plan['id']}"
+        )
+        markup.add(sub_button)
+        text = (f"{loc.get_text('subscription_status_title', lang_code)}\n\n"
+                f"**Статус:** {status_text}\n\n"
+                f"{loc.get_text('sub_no_active_sub', lang_code)}")
+        await bot.send_message(user_id, text, reply_markup=markup)
+        return
+
+    await bot.send_message(user_id, text)
 
 def register_command_handlers(bot: AsyncTeleBot):
     """Регистрирует все обработчики команд и кнопок-синонимов."""
     bot.register_message_handler(handle_start, commands=['start'], pass_bot=True)
     bot.register_message_handler(handle_logout, commands=['logout', 'lock'], pass_bot=True)
+    bot.register_message_handler(handle_subscription, commands=['subscription'], pass_bot=True)
     bot.register_message_handler(handle_cancel, commands=['cancel'], pass_bot=True)
     bot.register_message_handler(handle_profile, commands=['profile'], pass_bot=True)
 
