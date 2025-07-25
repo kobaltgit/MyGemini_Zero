@@ -81,7 +81,7 @@ async def successful_payment_callback(message: types.Message, bot: AsyncTeleBot)
     plan = next((p for p in settings.SUBSCRIPTION_PLANS if p['id'] == payload), None)
 
     if plan:
-        end_date = datetime.now() + timedelta(days=plan['duration_days'])
+        end_date = datetime.now(datetime.timezone.utc) + timedelta(days=plan['duration_days'])
         await db_manager.update_user_subscription(user_id, 'active', end_date.isoformat())
         
         main_logger.info(f"Пользователь {user_id} успешно оплатил подписку '{plan['id']}'.", extra={'user_id': str(user_id)})

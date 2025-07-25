@@ -842,6 +842,23 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
     if not await _check_access(bot, user_id, lang_code):
         return
     
+    # --- НАЧАЛО НОВОГО БЛОКА ПРОВЕРКИ ПОДПИСКИ ---
+    # Проверяем подписку для всех сообщений, которые не являются кнопками-командами
+    if message.text not in ALL_BUTTON_TEXTS:
+        subscription = await db_manager.get_user_subscription_status(user_id)
+        if subscription['status'] != 'active':
+            # Используем ту же логику, что и в декораторе
+            plan = settings.SUBSCRIPTION_PLANS[0]
+            markup = types.InlineKeyboardMarkup()
+            sub_button = types.InlineKeyboardButton(
+                text=loc.get_text('btn_subscribe', lang_code),
+                callback_data=f"{settings.CALLBACK_SUBSCRIBE_PREFIX}{plan['id']}"
+            )
+            markup.add(sub_button)
+            await bot.reply_to(message, loc.get_text('subscription_needed', lang_code), reply_markup=markup)
+            return
+    # --- КОНЕЦ НОВОГО БЛОКА ---
+    
     if message.content_type == 'text' and message.text in ALL_BUTTON_TEXTS:
         logger.debug(f"Router: Сообщение '{message.text}' распознано как кнопка. Пропускаем.")
         return

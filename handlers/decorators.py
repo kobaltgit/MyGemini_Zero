@@ -22,6 +22,7 @@ from functools import wraps
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 
+from config import settings
 from config.settings import ADMIN_USER_ID
 from database import db_manager
 from utils import localization as loc
@@ -39,6 +40,16 @@ def subscription_required(func):
     async def wrapper(message_or_call: types.Message | types.CallbackQuery, *args, **kwargs):
         from . import telegram_helpers as tg_helpers # Локальный импорт для избежания циклов
 
+        # --- НАЧАЛО ИСПРАВЛЕНИЯ: Надежное получение экземпляра бота ---
+        bot = kwargs.get('bot')
+        if not bot:
+            # Резервный поиск в позиционных аргументах, если вдруг pass_bot=False
+            for arg in args:
+                if isinstance(arg, AsyncTeleBot):
+                    bot = arg
+                    break
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
         user_id = message_or_call.from_user.id
         subscription = await db_manager.get_user_subscription_status(user_id)
 
@@ -47,18 +58,16 @@ def subscription_required(func):
         else:
             lang_code = await db_manager.get_user_language(user_id)
             
-            # Создаем клавиатуру с кнопкой подписки
-            plan = SUBSCRIPTION_PLANS[0] # Берем первый (и пока единственный) план
+            plan = settings.SUBSCRIPTION_PLANS[0]
             markup = types.InlineKeyboardMarkup()
             sub_button = types.InlineKeyboardButton(
                 text=loc.get_text('btn_subscribe', lang_code),
-                callback_data=f"{CALLBACK_SUBSCRIBE_PREFIX}{plan['id']}"
+                callback_data=f"{settings.CALLBACK_SUBSCRIBE_PREFIX}{plan['id']}"
             )
             markup.add(sub_button)
 
             text = loc.get_text('subscription_needed', lang_code)
             
-            bot = args[0] if isinstance(args[0], AsyncTeleBot) else kwargs.get('bot')
             if bot:
                 if isinstance(message_or_call, types.Message):
                     await bot.reply_to(message_or_call, text, reply_markup=markup)
