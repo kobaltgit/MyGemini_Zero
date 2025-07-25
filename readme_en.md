@@ -1,5 +1,6 @@
 # MyGemini Zero: Your Private AI Assistant with Long-Term Memory
 
+### [Читать на русском](readme.md)
 
 [
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)
