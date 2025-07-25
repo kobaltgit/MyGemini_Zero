@@ -38,7 +38,9 @@ from config.settings import (
     CALLBACK_ADMIN_STATS_MENU, CALLBACK_ADMIN_USER_MANAGEMENT_MENU,
     STATE_ADMIN_WAITING_FOR_USER_ID_TO_MANAGE,
     CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX, CALLBACK_ADMIN_RESET_API_KEY_PREFIX,
-    CALLBACK_ADMIN_EXPORT_USERS
+    CALLBACK_ADMIN_EXPORT_USERS,
+    CALLBACK_ADMIN_EXTEND_SUB_PREFIX,
+    CALLBACK_ADMIN_EXTEND_SUB_DAYS_PREFIX
 )
 from utils import markup_helpers as mk
 from utils import localization as loc
@@ -488,6 +490,85 @@ async def handle_reply_to_user_start(call: types.CallbackQuery, bot: AsyncTeleBo
     )
     await bot.answer_callback_query(call.id)
 
+@admin_required
+async def handle_extend_subscription_menu(call: types.CallbackQuery, bot: AsyncTeleBot):
+    """
+    Показывает меню с выбором срока продления подписки для пользователя.
+    """
+    admin_id = call.from_user.id
+    lang_code = await db_manager.get_user_language(admin_id)
+    user_id_to_extend = int(call.data.split(':')[1])
+    
+    prompt_text = loc.get_text('admin.extend_sub_prompt', lang_code).format(user_id=user_id_to_extend)
+    keyboard = mk.create_extend_subscription_keyboard(user_id_to_extend, lang_code)
+    
+    await tg_helpers.edit_message_text_safe(
+        bot,
+        chat_id=admin_id,
+        message_id=call.message.message_id,
+        text=prompt_text,
+        reply_markup=keyboard
+    )
+    await bot.answer_callback_query(call.id)
+
+
+@admin_required
+async def handle_extend_subscription_action(call: types.CallbackQuery, bot: AsyncTeleBot):
+    """
+    Продлевает подписку, уведомляет админа и пользователя.
+    """
+    admin_id = call.from_user.id
+    lang_code = await db_manager.get_user_language(admin_id)
+    
+    try:
+        user_id_str, days_str = call.data.split(':')[1:]
+        user_id_to_extend = int(user_id_str)
+        days_to_add = int(days_str)
+    except (ValueError, IndexError):
+        logger.error(f"Некорректный callback для продления подписки: {call.data}", extra={'user_id': str(admin_id)})
+        await bot.answer_callback_query(call.id, "Ошибка: неверные данные.", show_alert=True)
+        return
+        
+    new_end_date = await db_manager.extend_user_subscription(user_id_to_extend, days_to_add)
+    
+    if new_end_date:
+        new_date_str = new_end_date.strftime('%d.%m.%Y')
+        
+        # Готовим базовое уведомление для админа
+        admin_alert_text = loc.get_text('admin.extend_sub_success_admin', lang_code).format(
+            user_id=user_id_to_extend, new_date=new_date_str
+        )
+        
+        # Пытаемся уведомить пользователя
+        try:
+            user_lang_code = await db_manager.get_user_language(user_id_to_extend)
+            user_notification_text = loc.get_text('admin.extend_sub_notification_user', user_lang_code).format(new_date=new_date_str)
+            await bot.send_message(user_id_to_extend, user_notification_text)
+            # Если все успешно, показываем простое уведомление админу
+            await bot.answer_callback_query(call.id, admin_alert_text, show_alert=True)
+
+        except Exception as e:
+            error_reason = "Причина: пользователь не найден или заблокировал бота."
+            logger.warning(f"Не удалось отправить уведомление о продлении подписки пользователю {user_id_to_extend}: {e}", extra={'user_id': str(admin_id)})
+            # Если не удалось, добавляем причину в уведомление для админа
+            admin_alert_text_with_error = f"{admin_alert_text}\n\n(Не удалось уведомить пользователя. {error_reason})"
+            await bot.answer_callback_query(call.id, admin_alert_text_with_error, show_alert=True)
+    else:
+        await bot.answer_callback_query(call.id, "Ошибка при обновлении данных в базе.", show_alert=True)
+        
+    # Возвращаемся к карточке пользователя в любом случае
+    user_info_text = await tg_helpers.get_user_info_text(user_id_to_extend, lang_code)
+    user_info = await db_manager.get_user_info_for_admin(user_id_to_extend)
+    keyboard = mk.create_user_management_keyboard(user_id_to_extend, user_info['is_blocked'], lang_code) if user_info else None
+    await tg_helpers.edit_message_text_safe(
+        bot,
+        chat_id=admin_id,
+        message_id=call.message.message_id,
+        text=user_info_text,
+        reply_markup=keyboard,
+        parse_mode="MarkdownV2"
+    )
+
 def register_admin_handlers(bot: AsyncTeleBot):
     """
     Регистрирует все обработчики для админ-панели (команды и callback-и).
@@ -520,5 +601,9 @@ def register_admin_handlers(bot: AsyncTeleBot):
     bot.register_callback_query_handler(handle_broadcast_cancel, func=lambda call: call.data == CALLBACK_ADMIN_CANCEL_BROADCAST, pass_bot=True)
     bot.register_callback_query_handler(handle_toggle_block_user, func=lambda call: call.data.startswith(CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX), pass_bot=True)
     bot.register_callback_query_handler(handle_reset_api_key, func=lambda call: call.data.startswith(CALLBACK_ADMIN_RESET_API_KEY_PREFIX), pass_bot=True)
+
+    # --- НОВЫЕ ОБРАБОТЧИКИ ---
+    bot.register_callback_query_handler(handle_extend_subscription_menu, func=lambda call: call.data.startswith(CALLBACK_ADMIN_EXTEND_SUB_PREFIX), pass_bot=True)
+    bot.register_callback_query_handler(handle_extend_subscription_action, func=lambda call: call.data.startswith(CALLBACK_ADMIN_EXTEND_SUB_DAYS_PREFIX), pass_bot=True)
 
     logger.info("Обработчики команд и callback'ов админ-панели зарегистрированы.")

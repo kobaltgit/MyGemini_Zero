@@ -908,6 +908,34 @@ async def get_user_subscription_status(user_id: int) -> Dict[str, Any]:
 
     return {"status": status, "end_date": end_date}
 
+async def extend_user_subscription(user_id: int, days_to_add: int) -> Optional[datetime.date]:
+    """
+    Продлевает подписку пользователя на указанное количество дней.
+    Если подписка активна, дни добавляются к дате окончания.
+    Если истекла или отсутствует - отсчитываются от сегодня.
+
+    Args:
+        user_id: ID пользователя.
+        days_to_add: Количество дней для добавления.
+
+    Returns:
+        Новая дата окончания подписки или None в случае ошибки.
+    """
+    current_sub = await get_user_subscription_status(user_id)
+    today = datetime.date.today()
+    
+    start_date = today
+    if current_sub['status'] == 'active' and current_sub['end_date'] and current_sub['end_date'] > today:
+        start_date = current_sub['end_date']
+        
+    try:
+        new_end_date = start_date + datetime.timedelta(days=days_to_add)
+        await update_user_subscription(user_id, 'active', new_end_date.isoformat())
+        db_logger.info(f"Администратор продлил подписку для {user_id} на {days_to_add} дней. Новая дата окончания: {new_end_date.isoformat()}", extra={'user_id': 'AdminAction'})
+        return new_end_date
+    except Exception as e:
+        db_logger.exception(f"Ошибка при продлении подписки для {user_id}: {e}", extra={'user_id': 'AdminAction'})
+        return None
 
 async def update_user_subscription(user_id: int, status: str, end_date_iso: str):
     """Обновляет статус и дату окончания подписки пользователя."""

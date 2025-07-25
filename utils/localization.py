@@ -330,7 +330,14 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
             'reply_to_user_prompt': "Ответить пользователю `{user_id}`:",
             'reply_sent_success': "✅ Сообщение отправлено пользователю `{user_id}`.",
             'reply_sent_fail': "❌ Не удалось отправить сообщение. Возможно, пользователь заблокировал бота.",
-            'reply_admin_notification': "✉️ *Сообщение от администратора:*\n\n`{text}`"
+            'reply_admin_notification': "✉️ *Сообщение от администратора:*\n\n`{text}`",
+            'btn_extend_subscription': "➕ Продлить подписку",
+            'extend_sub_prompt': "Выберите срок, на который нужно продлить подписку для пользователя `{user_id}`:",
+            'extend_sub_success_admin': "✅ Подписка для пользователя {user_id} успешно продлена до {new_date}.",
+            'extend_sub_notification_user': "🎉 *Отличные новости!* Администратор продлил вашу подписку. Теперь она действительна до `{new_date}`.",
+            'btn_days_30': "30 дней",
+            'btn_days_90': "90 дней",
+            'btn_days_365': "365 дней (1 год)",
         }
     },
     'en': {
@@ -602,7 +609,15 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
             'reply_to_user_prompt': "Reply to user `{user_id}`:",
             'reply_sent_success': "✅ Message sent to user `{user_id}`.",
             'reply_sent_fail': "❌ Failed to send message. The user may have blocked the bot.",
-            'reply_admin_notification': "✉️ *Message from the administrator:*\n\n`{text}`"
+            'reply_admin_notification': "✉️ *Message from the administrator:*\n\n`{text}`",
+            # New texts for subscription extension
+            'btn_extend_subscription': "➕ Extend Subscription",
+            'extend_sub_prompt': "Select the extension period for user `{user_id}`:",
+            'extend_sub_success_admin': "✅ Subscription for user {user_id} has been successfully extended until {new_date}.",
+            'extend_sub_notification_user': "🎉 *Great news!* An administrator has extended your subscription. It is now valid until `{new_date}`.",
+            'btn_days_30': "30 days",
+            'btn_days_90': "90 days",
+            'btn_days_365': "365 days (1 year)",
         }
     }
 }

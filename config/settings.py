@@ -289,6 +289,8 @@ CALLBACK_ADMIN_USER_MANAGEMENT_MENU = 'admin_user_management_menu'
 CALLBACK_ADMIN_USER_INFO_PREFIX = 'admin_user_info:'
 CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX = 'admin_toggle_block:'
 CALLBACK_ADMIN_RESET_API_KEY_PREFIX = 'admin_reset_api_key:'
+CALLBACK_ADMIN_EXTEND_SUB_PREFIX = 'admin_extend_sub:'
+CALLBACK_ADMIN_EXTEND_SUB_DAYS_PREFIX = 'admin_extend_sub_days:'
 # Statistics
 CALLBACK_ADMIN_STATS_MENU = 'admin_stats_menu'
 # Export

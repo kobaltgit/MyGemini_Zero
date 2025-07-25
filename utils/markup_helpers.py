@@ -19,6 +19,7 @@ from telebot import types
 import datetime
 from typing import List, Optional, Dict, Any
 
+from config import settings
 from config.settings import (
     BOT_STYLES, CALLBACK_ADMIN_EXPORT_USERS, DONATION_URL, TRANSLATE_LANGUAGES, BOT_PERSONAS, ADMIN_USER_ID,
     CALLBACK_SETTINGS_STYLE_PREFIX, CALLBACK_IGNORE,
@@ -39,7 +40,8 @@ from config.settings import (
     CALLBACK_ADMIN_MAIN_MENU, CALLBACK_ADMIN_STATS_MENU, CALLBACK_ADMIN_COMMUNICATION_MENU,
     CALLBACK_ADMIN_USER_MANAGEMENT_MENU, CALLBACK_ADMIN_MAINTENANCE_MENU, CALLBACK_ADMIN_TOGGLE_MAINTENANCE,
     CALLBACK_ADMIN_BROADCAST, CALLBACK_ADMIN_CONFIRM_BROADCAST, CALLBACK_ADMIN_CANCEL_BROADCAST,
-    CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX, CALLBACK_ADMIN_RESET_API_KEY_PREFIX
+    CALLBACK_ADMIN_TOGGLE_BLOCK_PREFIX, CALLBACK_ADMIN_RESET_API_KEY_PREFIX,
+    CALLBACK_ADMIN_EXTEND_SUB_PREFIX
 )
 from database import db_manager
 from logger_config import get_logger
@@ -401,6 +403,12 @@ def create_user_management_keyboard(user_to_manage_id: int, is_blocked: bool, la
         loc.get_text('admin.btn_reset_user_api_key', lang_code),
         callback_data=f"{CALLBACK_ADMIN_RESET_API_KEY_PREFIX}{user_to_manage_id}"
     )
+
+    # --- НОВАЯ КНОПКА: Продление подписки ---
+    extend_sub_btn = types.InlineKeyboardButton(
+        loc.get_text('admin.btn_extend_subscription', lang_code),
+        callback_data=f"{CALLBACK_ADMIN_EXTEND_SUB_PREFIX}{user_to_manage_id}"
+    )
     
     # Кнопка назад
     back_btn = types.InlineKeyboardButton(
@@ -408,7 +416,25 @@ def create_user_management_keyboard(user_to_manage_id: int, is_blocked: bool, la
         callback_data=CALLBACK_ADMIN_MAIN_MENU
     )
     
-    markup.add(block_btn, reset_key_btn, back_btn)
+    markup.add(block_btn, reset_key_btn, extend_sub_btn, back_btn)
+    return markup
+
+def create_extend_subscription_keyboard(user_id: int, lang_code: str) -> types.InlineKeyboardMarkup:
+    """Создает клавиатуру для выбора срока продления подписки."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    days_options = [30, 90, 365]
+    for days in days_options:
+        button_text = loc.get_text(f'admin.btn_days_{days}', lang_code)
+        callback_data = f"{settings.CALLBACK_ADMIN_EXTEND_SUB_DAYS_PREFIX}{user_id}:{days}"
+        markup.add(types.InlineKeyboardButton(text=button_text, callback_data=callback_data))
+        
+    # Добавляем кнопку "Назад" к информации о пользователе
+    # Это создаст ощущение "вложенного" меню
+    markup.add(types.InlineKeyboardButton(
+        "⬅️ " + loc.get_text('admin.user_info_title', lang_code),
+        callback_data=f"admin_back_to_user_info:{user_id}"
+    ))
     return markup
 
 def create_panic_password_setup_keyboard(lang_code: str) -> types.InlineKeyboardMarkup:
