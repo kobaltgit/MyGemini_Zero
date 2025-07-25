@@ -165,12 +165,15 @@ Even though we offer a ready-made service, we believe in openness. You can deplo
 
 
     ```env
-    # Токен вашего Telegram-бота от @BotFather
+    # Your Telegram Bot Token from @BotFather
     BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 
 
-    # Ваш Telegram User ID для админских прав
+    # Your Telegram User ID for Admin Rights
     ADMIN_USER_ID=123456789
+
+    # Telegram Payment Token
+    PAYMENT_PROVIDER_TOKEN=1234567890:TEST:d1a2f5s9w6f1a5s6w8f9
     ```
 
 

@@ -164,6 +164,9 @@
 
     # Ваш Telegram User ID для админских прав
     ADMIN_USER_ID=123456789
+
+    # Платежный токен Telegram
+    PAYMENT_PROVIDER_TOKEN=1234567890:TEST:d1a2f5s9w6f1a5s6w8f9
     ```
 
 ### Запуск бота
