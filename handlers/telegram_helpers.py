@@ -82,99 +82,111 @@ async def send_typing_action(bot: AsyncTeleBot, chat_id: int):
 
 async def send_long_message(bot: AsyncTeleBot, chat_id: int, text: str, **kwargs):
     """
-    Отправляет длинное сообщение, корректно разделяя его на части.
-    Сначала отделяет блоки кода от текста, затем применяет к каждому типу контента
-    свою логику разделения и форматирует результат с помощью telegramify_markdown.
+    Отправляет длинное сообщение, корректно разделяя его на части с учетом MarkdownV2.
+    Сначала весь текст форматируется, затем разделяется на блоки (текст/код), и каждый
+    блок, если он слишком длинный, безопасно делится на под-части.
 
     Args:
         bot: Экземпляр AsyncTeleBot.
         chat_id: ID чата для отправки.
         text: Текст сообщения, который может содержать Markdown.
-        **kwargs: Дополнительные аргументы для `bot.send_message` (например, reply_markup),
-                  которые будут применены только к последнему сообщению.
+        **kwargs: Дополнительные аргументы для `bot.send_message`, применяемые к последнему сообщению.
     """
-    if not text:
+    if not text or not text.strip():
+        logger.warning(f"Попытка отправить пустое сообщение в чат {chat_id}", extra={'user_id': str(chat_id)})
         return
 
-    # Максимальная длина чанка, оставляем небольшой запас.
-    CHUNK_SIZE = 4000
+    MAX_LENGTH = 4096
     final_chunks = []
 
-    # Шаг 1: Разделяем текст на обычные куски и блоки кода.
-    parts = re.split(r'(```[\s\S]*?```)', text)
+    try:
+        # Шаг 1: Форматируем ВЕСЬ текст в MarkdownV2 один раз в самом начале.
+        formatted_text = telegramify_markdown.markdownify(text)
 
-    # Шаг 2: Обрабатываем каждый кусок отдельно.
-    for part in parts:
-        if not part or part.isspace():
-            continue
+        # Шаг 2: Разделяем уже отформатированный текст на обычные куски и блоки кода.
+        parts = re.split(r'(```[\s\S]*?```)', formatted_text)
 
-        # 2.1. Если это блок кода
-        if part.startswith('```'):
-            # Если блок кода слишком длинный, делим его содержимое
-            if len(part) > CHUNK_SIZE:
-                match = re.match(r'```(\w*)\n?([\s\S]*?)```', part)
-                if match:
-                    lang, code_content = match.groups()
-                    lang_tag = lang if lang else ""
-                    
-                    # Делим сам код на части, оставляя место для ``` обертки
-                    code_splitter = MarkdownTextSplitter(chunk_size=CHUNK_SIZE - 10, chunk_overlap=0)
-                    sub_chunks = code_splitter.split_text(code_content)
-                    for sub_chunk in sub_chunks:
-                        final_chunks.append(f"```{lang_tag}\n{sub_chunk.strip()}\n```")
-                else:
-                     final_chunks.append(part) # Не удалось распарсить, добавляем как есть
-            else:
-                # Блок кода помещается целиком
+        # Шаг 3: Обрабатываем каждую часть, при необходимости деля ее дальше.
+        for part in parts:
+            if not part or part.isspace():
+                continue
+
+            if len(part) <= MAX_LENGTH:
                 final_chunks.append(part)
-        
-        # 2.2. Если это обычный текст
-        else:
-            if len(part) > CHUNK_SIZE:
-                text_splitter = MarkdownTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=100)
-                text_chunks = text_splitter.split_text(part)
-                final_chunks.extend(text_chunks)
+                continue
+
+            # Если часть все еще слишком длинная после форматирования, делим ее.
+            if part.startswith('```'):
+                # Это длинный блок кода. Делим его по строкам.
+                match = re.match(r'```(\w*)\n?([\s\S]*?)```', part, re.DOTALL)
+                if not match:
+                    final_chunks.append(part[:MAX_LENGTH]) # Резервный вариант
+                    continue
+                
+                lang, code_content = match.groups()
+                lang_tag = lang if lang else ""
+                header = f"```{lang_tag}\n"
+                footer = "\n```"
+                
+                lines = code_content.split('\n')
+                current_chunk_content = ""
+                for line in lines:
+                    if len(header) + len(current_chunk_content) + len(line) + len(footer) + 1 > MAX_LENGTH:
+                        final_chunks.append(f"{header}{current_chunk_content}{footer}")
+                        current_chunk_content = line
+                    else:
+                        current_chunk_content += f"\n{line}"
+                
+                if current_chunk_content:
+                    final_chunks.append(f"{header}{current_chunk_content.lstrip()}{footer}")
+
             else:
-                final_chunks.append(part)
-
-    # Шаг 3: Отправляем все сформированные части
-    total_chunks = len(final_chunks)
-    if total_chunks == 0:
-        return
-
-    for i, chunk in enumerate(final_chunks):
-        if not chunk.strip():
-            continue
-
-        current_kwargs = {}
-        if i == total_chunks - 1:
-            current_kwargs = kwargs
-        else:
-            current_kwargs['disable_web_page_preview'] = kwargs.get('disable_web_page_preview', True)
+                # Это длинный обычный текст. Делим его по строкам.
+                lines = part.split('\n')
+                current_chunk = ""
+                for line in lines:
+                    if len(current_chunk) + len(line) + 1 > MAX_LENGTH:
+                        final_chunks.append(current_chunk)
+                        current_chunk = line
+                    else:
+                        current_chunk += f"\n{line}"
+                if current_chunk:
+                    final_chunks.append(current_chunk.lstrip())
         
-        try:
-            # Форматируем каждую готовую часть с помощью markdownify
-            formatted_chunk = telegramify_markdown.markdownify(chunk)
+        # Шаг 4: Отправляем все сформированные части.
+        total_chunks = len(final_chunks)
+        if total_chunks == 0: return
+
+        for i, chunk in enumerate(final_chunks):
+            if not chunk or chunk.isspace(): continue
+
+            current_kwargs = {}
+            if i == total_chunks - 1:
+                current_kwargs = kwargs
+            else:
+                current_kwargs['disable_web_page_preview'] = kwargs.get('disable_web_page_preview', True)
+            
             await bot.send_message(
-                chat_id,
-                formatted_chunk,
-                parse_mode='MarkdownV2',
-                **current_kwargs
+                chat_id, chunk, parse_mode='MarkdownV2', **current_kwargs
             )
-        except apihelper.ApiException as e:
-            logger.error(
-                f"Ошибка отправки MarkdownV2 части user_id {chat_id}: {e}. "
-                f"Попытка отправки как простого текста. Текст части: '{chunk[:100]}...'",
-                extra={'user_id': str(chat_id)}
-            )
-            try:
-                # В случае ошибки, отправляем "сырой" chunk как простой текст
-                await bot.send_message(chat_id, chunk, parse_mode=None, **current_kwargs)
-            except Exception as fallback_e:
-                logger.error(f"Резервный механизм отправки (простой текст) также не сработал для user_id {chat_id}: {fallback_e}", extra={'user_id': str(chat_id)})
-        
-        if total_chunks > 1:
-            await asyncio.sleep(0.5)
+            if total_chunks > 1:
+                await asyncio.sleep(0.5)
+
+    except Exception as e:
+        logger.error(
+            f"Критическая ошибка при отправке длинного сообщения user_id {chat_id}: {e}. Попытка отправки как простого текста.",
+            extra={'user_id': str(chat_id)}
+        )
+        # Резервный механизм: отправляем оригинальный текст простым сплиттером
+        try:
+            text_splitter = MarkdownTextSplitter(chunk_size=MAX_LENGTH, chunk_overlap=100)
+            fallback_chunks = text_splitter.split_text(text)
+            for i, fallback_chunk in enumerate(fallback_chunks):
+                current_kwargs = {}
+                if i == len(fallback_chunks) - 1: current_kwargs = kwargs
+                await bot.send_message(chat_id, fallback_chunk, parse_mode=None, **current_kwargs)
+        except Exception as fallback_e:
+            logger.error(f"Резервный механизм отправки также не сработал для user_id {chat_id}: {fallback_e}", extra={'user_id': str(chat_id)})
 
 
 async def send_error_reply(

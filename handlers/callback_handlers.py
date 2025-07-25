@@ -601,10 +601,18 @@ async def handle_calendar_date_selection(bot: AsyncTeleBot, call: types.Callback
             if history:
                 history_text = f"📜 {loc.get_text('history_for_date', lang_code)} {selected_date.strftime('%d.%m.%Y')}:\n\n"
                 for item in history:
-                    safe_message = th.escape_markdown(item.get('message_text', ''))
                     role = item.get('role', 'unknown')
+                    message_text = item.get('message_text', '')
+                    
+                    # Экранируем Markdown только в сообщениях пользователя, чтобы сохранить форматирование бота
+                    if role == 'user':
+                        safe_message = th.escape_markdown(message_text)
+                    else:
+                        safe_message = message_text # Оставляем Markdown бота как есть
+
                     prefix = f"👤 *{loc.get_text('history_role_user', lang_code)}:*" if role == 'user' else f"🤖 *{loc.get_text('history_role_bot', lang_code)}:*"
                     history_text += f"{prefix}\n{safe_message}\n\n"
+                
                 await tg_helpers.send_long_message(bot, user_id, history_text)
             else:
                 await bot.send_message(user_id, loc.get_text('history_no_messages', lang_code))

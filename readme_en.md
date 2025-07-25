@@ -20,6 +20,21 @@
 
 Unlike standard chats that "forget" everything after each conversation, MyGemini Zero transforms the neural network from a genius with amnesia into your personal assistant who **remembers, learns, and adapts** to you. And all of this comes with a cryptographic guarantee that no one, not even service administrators, can read your data.
 
+---
+
+## Access Model: Paid Service, Free Alternative & Open Source
+
+**MyGemini Zero is a paid subscription service.** We believe in openness, so we offer you three ways to proceed:
+
+1.  **🚀 Hosted Service (Paid):** Get all the benefits of MyGemini Zero without the technical hassle. Stability, updates, and support are all included.
+    *   **[➡️ Go to the MyGemini Zero Bot](https://t.me/mgemz_bot)** (Subscription Required).
+
+2.  **🆓 Free Alternative:** If you don't need long-term memory and Zero-Knowledge encryption, you can use our basic **MyGemini** bot. It's completely free and runs on your personal API key.
+    *   **[➡️ Go to the free MyGemini Bot](https://t.me/mgem_bot)**.
+
+3.  **💻 DIY Self-Hosting (Free):** If you are a technical user, you can deploy this bot on your own server for free using our open-source code.
+    *   **[➡️ Go to the Setup Guide](#️-for-enthusiasts-self-hosting)**
+
 
 ### **[Start using the bot (coming soon)](https://t.me/mgem_bot)**
 <img src="https://i.ibb.co/NdbvMTWJ/Screenshot-34.png" alt="Screenshot-34" border="0">
@@ -116,9 +131,9 @@ This is a "plausible deniability" feature that provides an extra layer of protec
 
 ---
 
-## ⚙️ For Enthusiasts: Setup and Launch
+## ⚙️ For Enthusiasts: Self-Hosting
 
-Even though we offer a ready-made service, we believe in openness. You can deploy your own instance of the bot.
+Even though we offer a ready-made service, we believe in openness. You can deploy your own instance of the bot for free.
 
 ### Prerequisites
 *   **Python 3.10 or higher.**
