@@ -65,7 +65,7 @@ async def handle_start(message: types.Message, bot: AsyncTeleBot):
     user_id = user.id
     logger.info(f"Команда /start от user_id: {user_id}", extra={'user_id': str(user_id)})
 
-    await db_manager.add_or_update_user(user.id, user.username, user.first_name, user.last_name)
+    await db_manager.add_or_update_user(user.id, user.username, user.first_name, user.last_name, user.language_code)
     lang_code = await db_manager.get_user_language(user_id)
     
     subscription = await db_manager.get_user_subscription_status(user_id)

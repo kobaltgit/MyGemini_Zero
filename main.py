@@ -74,11 +74,23 @@ async def successful_payment_callback(message: types.Message, bot: AsyncTeleBot)
     """
     Обрабатывает уведомление об успешной оплате.
     """
-    user_id = message.from_user.id
+    user = message.from_user  # <-- ИСПРАВЛЕНИЕ 1: Определяем переменную user
+    user_id = user.id
+
+    # Гарантируем, что пользователь существует в БД, передавая его язык
+    await db_manager.add_or_update_user(user.id, user.username, user.first_name, user.last_name, user.language_code)
+
+    # ИСПРАВЛЕНИЕ 2: Теперь, когда пользователь точно есть в базе, получаем его актуальный язык
     lang_code = await db_manager.get_user_language(user_id)
     
-    payload = message.successful_payment.invoice_payload
-    plan = next((p for p in settings.SUBSCRIPTION_PLANS if p['id'] == payload), None)
+    full_payload = message.successful_payment.invoice_payload
+    try:
+        plan_id = full_payload.split(':')[0]
+    except IndexError:
+        main_logger.error(f"Получен успешный платеж по некорректному payload: {full_payload}", extra={'user_id': str(user_id)})
+        return
+    
+    plan = next((p for p in settings.SUBSCRIPTION_PLANS if p['id'] == plan_id), None)
 
     if plan:
         end_date = datetime.now(timezone.utc) + timedelta(days=plan['duration_days'])
@@ -89,7 +101,7 @@ async def successful_payment_callback(message: types.Message, bot: AsyncTeleBot)
         # Отправляем подтверждение и призываем к следующему шагу - /start
         await bot.send_message(user_id, loc.get_text('payment_successful', lang_code))
     else:
-        main_logger.error(f"Получен успешный платеж по неизвестному payload: {payload}", extra={'user_id': str(user_id)})
+        main_logger.error(f"Получен успешный платеж по неизвестному payload: {plan_id}", extra={'user_id': str(user_id)})
 
 
 async def check_subscriptions(bot: AsyncTeleBot):

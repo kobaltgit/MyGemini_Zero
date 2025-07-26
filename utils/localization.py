@@ -249,28 +249,7 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'sub_no_active_sub': "У вас нет активной подписки.",
         'payment_successful': "✅ **Оплата прошла успешно!**\n\nВаша подписка активирована. Спасибо за поддержку!\n\nТеперь необходимо завершить настройку. Пожалуйста, используйте команду /start, чтобы создать мастер-пароль.",
         'payment_pre_checkout_error': "❌ Не удалось обработать платеж. Пожалуйста, попробуйте снова или свяжитесь с поддержкой.",
-
-        # --- NEW SECTION: Subscription ---
-        'welcome_new_user_subscribed': "👋 **Welcome to MyGemini Zero!**\n\n"
-                                 "This is your personal, private AI assistant with persistent memory, built on the Zero-Knowledge principle.\n\n"
-                                 "An **active subscription** is required for full access. It gives you:\n"
-                                 "🔐 **Maximum Privacy:** Your data is encrypted with a password only you know.\n"
-                                 "🧠 **Long-Term Memory:** The bot remembers the context of all your dialogs and files.\n"
-                                 "⚙️ **Turnkey Convenience:** You get a ready-to-use, stable, and evolving service with no setup required.\n\n"
-                                 "Press the button below to subscribe.\n\n"
-                                 "--- *Alternatives* ---\n"
-                                 "🤖 If you're not ready to purchase, you can use our [free MyGemini bot](https://t.me/mgem_bot) (without Zero-Knowledge) or [deploy this bot yourself](https://github.com/kobaltgit/MyGemini_Zero) from GitHub.",
-        'btn_subscribe': "✅ Subscribe Now",
-        'subscription_needed': "🚫 **Access Denied.**\n\nAn active subscription is required to use this feature. Please subscribe to get full access to all of the bot's capabilities.",
-        'subscription_status_title': "💳 *Your Subscription Status*",
-        'sub_status_active': "Active",
-        'sub_status_expired': "Expired",
-        'sub_status_none': "Not Active",
-        'sub_ends_on': "Valid until:",
-        'sub_no_active_sub': "You do not have an active subscription.",
-        'payment_successful': "✅ **Payment Successful!**\n\nYour subscription is now active. Thank you for your support!\n\nPlease use the /start command to complete the setup by creating your master password.",
-        'payment_pre_checkout_error': "❌ Could not process payment. Please try again or contact support.",
-
+        
         # --- Секция админа ---
         'admin': {
             'panel_title': "👑 *Админ-панель*",
@@ -550,6 +529,28 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
         'btn_usage': "📊 Usage",
         'btn_admin_panel': "👑 Admin Panel",
         'btn_support': "❤️ Support the Author",
+
+        # --- NEW SECTION: Subscription ---
+        'welcome_new_user_subscribed': "👋 **Welcome to MyGemini Zero!**\n\n"
+                                 "This is your personal, private AI assistant with persistent memory, built on the Zero-Knowledge principle.\n\n"
+                                 "An **active subscription** is required for full access. It gives you:\n"
+                                 "🔐 **Maximum Privacy:** Your data is encrypted with a password only you know.\n"
+                                 "🧠 **Long-Term Memory:** The bot remembers the context of all your dialogs and files.\n"
+                                 "⚙️ **Turnkey Convenience:** You get a ready-to-use, stable, and evolving service with no setup required.\n\n"
+                                 "Press the button below to subscribe.\n\n"
+                                 "--- *Alternatives* ---\n"
+                                 "🤖 If you're not ready to purchase, you can use our [free MyGemini bot](https://t.me/mgem_bot) (without Zero-Knowledge) or [deploy this bot yourself](https://github.com/kobaltgit/MyGemini_Zero) from GitHub.",
+        'btn_subscribe': "✅ Subscribe Now",
+        'subscription_needed': "🚫 **Access Denied.**\n\nAn active subscription is required to use this feature. Please subscribe to get full access to all of the bot's capabilities.",
+        'subscription_status_title': "💳 *Your Subscription Status*",
+        'sub_status_active': "Active",
+        'sub_status_expired': "Expired",
+        'sub_status_none': "Not Active",
+        'sub_ends_on': "Valid until:",
+        'sub_no_active_sub': "You do not have an active subscription.",
+        'payment_successful': "✅ **Payment Successful!**\n\nYour subscription is now active. Thank you for your support!\n\nPlease use the /start command to complete the setup by creating your master password.",
+        'payment_pre_checkout_error': "❌ Could not process payment. Please try again or contact support.",
+
         # --- Admin Section ---
         'admin': {
             'panel_title': "👑 *Admin Panel*",

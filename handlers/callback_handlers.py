@@ -16,6 +16,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import datetime
+import time
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 
@@ -74,12 +75,16 @@ async def handle_subscribe_button(bot: AsyncTeleBot, call: types.CallbackQuery, 
         await tg_helpers.answer_callback_query(bot, call, "Выбранный тарифный план не найден.", show_alert=True)
         return
     
+    user_id = call.from_user.id
+    timestamp = int(time.time())
+    unique_payload = f"{plan['id']}:{user_id}:{timestamp}"
+    
     # Создаем и отправляем инвойс
     await bot.send_invoice(
-        chat_id=call.from_user.id,
+        chat_id=user_id,
         title=plan['title'],
         description=plan['description'],
-        invoice_payload=plan['id'],  # Уникальный ID для этого платежа
+        invoice_payload=unique_payload, # <-- Используем уникальный payload
         provider_token=settings.PAYMENT_PROVIDER_TOKEN,
         currency=plan['price_currency'],
         prices=[types.LabeledPrice(label=plan['title'], amount=plan['price_amount'])]

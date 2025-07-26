@@ -37,7 +37,7 @@ Unlike standard chats that "forget" everything after each conversation, MyGemini
     *   **[➡️ Go to the Setup Guide](#️-for-enthusiasts-self-hosting)**
 
 
-### **[Start using the bot (coming soon)](https://t.me/mgem_bot)**
+### **[Start using the bot](https://t.me/mgemz_bot)**
 <img src="https://i.ibb.co/NdbvMTWJ/Screenshot-34.png" alt="Screenshot-34" border="0">
 
 

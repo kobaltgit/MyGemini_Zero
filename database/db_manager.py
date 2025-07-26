@@ -131,51 +131,49 @@ def setup_database_sync():
             )
         """)
         
-        # --- Таблица users ---
+        # --- Таблица users (унифицированная логика) ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            language_code TEXT DEFAULT 'ru' NOT NULL,
+            first_interaction_date TEXT,
+            is_blocked INTEGER NOT NULL DEFAULT 0,
+            active_dialog_id INTEGER REFERENCES dialogs(dialog_id) ON DELETE SET NULL,
+            
+            bot_style TEXT DEFAULT 'default' NOT NULL,
+            gemini_model TEXT,
+            active_persona TEXT DEFAULT 'default' NOT NULL,
+            
+            master_password_hash BLOB,
+            encryption_salt BLOB,
+            api_key BLOB,
+            last_session_ts TEXT,
+            panic_password_hash BLOB,
+
+            subscription_status TEXT DEFAULT 'none' NOT NULL,
+            subscription_end_date TEXT
+        )""")
+
+        # Проверяем существующую таблицу на случай, если она была создана до добавления новых полей
         cursor.execute("PRAGMA table_info(users)")
         user_columns = {col['name'] for col in cursor.fetchall()}
-        if not user_columns:
-            db_logger.info("Таблица 'users' не найдена, создаем...")
-            cursor.execute("""
-            CREATE TABLE users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                language_code TEXT DEFAULT 'ru' NOT NULL,
-                first_interaction_date TEXT,
-                is_blocked INTEGER NOT NULL DEFAULT 0,
-                active_dialog_id INTEGER REFERENCES dialogs(dialog_id) ON DELETE SET NULL,
-                
-                -- Поля из оригинального проекта
-                bot_style TEXT DEFAULT 'default' NOT NULL,
-                gemini_model TEXT,
-                active_persona TEXT DEFAULT 'default' NOT NULL,
-                
-                -- Поля для Zero-Knowledge
-                master_password_hash BLOB,
-                encryption_salt BLOB,
-                api_key BLOB,
-                last_session_ts TEXT
-            )""")
-        else:
-            # Логика миграции для добавления ВСЕХ недостающих колонок
-            required_columns = {
-                'bot_style': "TEXT DEFAULT 'default' NOT NULL",
-                'gemini_model': 'TEXT',
-                'active_persona': "TEXT DEFAULT 'default' NOT NULL",
-                'master_password_hash': 'BLOB',
-                'encryption_salt': 'BLOB',
-                'api_key': 'BLOB',
-                'last_session_ts': 'TEXT',
-                'panic_password_hash': 'BLOB',
-                'subscription_status': "TEXT DEFAULT 'none' NOT NULL", # 'none', 'active', 'expired'
-                'subscription_end_date': 'TEXT'
-            }
-            missing_cols = required_columns.keys() - user_columns
+        
+        required_columns = {
+            'bot_style': "TEXT DEFAULT 'default' NOT NULL", 'gemini_model': 'TEXT',
+            'active_persona': "TEXT DEFAULT 'default' NOT NULL", 'master_password_hash': 'BLOB',
+            'encryption_salt': 'BLOB', 'api_key': 'BLOB', 'last_session_ts': 'TEXT',
+            'panic_password_hash': 'BLOB', 'subscription_status': "TEXT DEFAULT 'none' NOT NULL",
+            'subscription_end_date': 'TEXT'
+        }
+        missing_cols = required_columns.keys() - user_columns
+        if missing_cols:
+            db_logger.info(f"Обнаружены отсутствующие колонки в таблице users: {missing_cols}. Начинаем миграцию...")
             for col in missing_cols:
                 col_type = required_columns[col]
-                db_logger.info(f"Добавляем отсутствующий столбец '{col}' в 'users'...")
+                db_logger.info(f"Добавляем столбец '{col}'...")
                 cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
 
         # --- Таблица dialogs ---
@@ -250,26 +248,37 @@ async def setup_database():
 
 # --- Управление пользователями и паролями (ZK) ---
 
-async def add_or_update_user(user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]) -> bool:
-    """Добавляет нового пользователя или обновляет его данные. Создает диалог по умолчанию.
+async def add_or_update_user(user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str], lang_code: Optional[str] = None) -> bool:
+    """
+    Добавляет нового пользователя или обновляет его данные.
+    При создании нового пользователя использует предоставленный lang_code.
 
     Args:
         user_id: ID пользователя.
         username: Юзернейм пользователя.
         first_name: Имя пользователя.
         last_name: Фамилия пользователя.
+        lang_code: Код языка из профиля Telegram пользователя.
 
     Returns:
         bool: True, если пользователь был новым, иначе False.
     """
     user_data = await _execute_query("SELECT user_id, active_dialog_id FROM users WHERE user_id = ?", (user_id,), fetch_one=True)
     is_new_user = False
+    
+    supported_lang = 'ru'
+    if lang_code in ['ru', 'en']:
+        supported_lang = lang_code
+
     if not user_data:
         is_new_user = True
-        db_logger.info(f"Добавляем нового пользователя {user_id} (@{username}).")
+        db_logger.info(f"Добавляем нового пользователя {user_id} (@{username}) с языком '{supported_lang}'.")
         today_date_str = datetime.date.today().strftime('%Y-%m-%d')
-        query = "INSERT INTO users (user_id, username, first_name, last_name, first_interaction_date) VALUES (?, ?, ?, ?, ?)"
-        params = (user_id, username, first_name, last_name, today_date_str)
+        
+        query = "INSERT INTO users (user_id, username, first_name, last_name, first_interaction_date, language_code) VALUES (?, ?, ?, ?, ?, ?)"
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        params = (user_id, username, first_name, last_name, today_date_str, supported_lang)
+        
         await _execute_query(query, params, is_write_operation=True)
         await create_dialog(user_id, "Основной диалог", set_active=True)
     else:
