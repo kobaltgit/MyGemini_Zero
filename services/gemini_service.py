@@ -297,14 +297,14 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
         reliable_chunks = await vector_store.search_relevant_chunks(
             active_dialog_id, 
             user_message_for_db, 
-            n_results=3,
+            n_results=5,
             metadata_filter={"$or": [{"content_type": "document"}, {"content_type": "summary"}]}
         )
         
         general_chunks = await vector_store.search_relevant_chunks(
             active_dialog_id, 
             user_message_for_db, 
-            n_results=2
+            n_results=5
         )
         
         all_chunks = list(dict.fromkeys(reliable_chunks + general_chunks))
