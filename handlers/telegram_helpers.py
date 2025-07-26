@@ -83,30 +83,27 @@ async def send_typing_action(bot: AsyncTeleBot, chat_id: int):
 async def send_long_message(bot: AsyncTeleBot, chat_id: int, text: str, **kwargs):
     """
     Отправляет длинное сообщение, корректно разделяя его на части с учетом MarkdownV2.
-    Сначала весь текст форматируется, затем разделяется на блоки (текст/код), и каждый
-    блок, если он слишком длинный, безопасно делится на под-части.
+    Использует кастомную логику для обработки блоков кода и имеет надежный
+    резервный механизм для обработки невалидного Markdown.
 
     Args:
         bot: Экземпляр AsyncTeleBot.
         chat_id: ID чата для отправки.
         text: Текст сообщения, который может содержать Markdown.
-        **kwargs: Дополнительные аргументы для `bot.send_message`, применяемые к последнему сообщению.
+        **kwargs: Дополнительные аргументы для `bot.send_message`.
     """
     if not text or not text.strip():
         logger.warning(f"Попытка отправить пустое сообщение в чат {chat_id}", extra={'user_id': str(chat_id)})
         return
 
     MAX_LENGTH = 4096
-    final_chunks = []
-
+    
     try:
-        # Шаг 1: Форматируем ВЕСЬ текст в MarkdownV2 один раз в самом начале.
+        # --- ВАША ОРИГИНАЛЬНАЯ ЛОГИКА (ОСТАЕТСЯ НЕИЗМЕННОЙ) ---
+        final_chunks = []
         formatted_text = telegramify_markdown.markdownify(text)
-
-        # Шаг 2: Разделяем уже отформатированный текст на обычные куски и блоки кода.
         parts = re.split(r'(```[\s\S]*?```)', formatted_text)
 
-        # Шаг 3: Обрабатываем каждую часть, при необходимости деля ее дальше.
         for part in parts:
             if not part or part.isspace():
                 continue
@@ -115,12 +112,10 @@ async def send_long_message(bot: AsyncTeleBot, chat_id: int, text: str, **kwargs
                 final_chunks.append(part)
                 continue
 
-            # Если часть все еще слишком длинная после форматирования, делим ее.
             if part.startswith('```'):
-                # Это длинный блок кода. Делим его по строкам.
                 match = re.match(r'```(\w*)\n?([\s\S]*?)```', part, re.DOTALL)
                 if not match:
-                    final_chunks.append(part[:MAX_LENGTH]) # Резервный вариант
+                    final_chunks.append(part[:MAX_LENGTH])
                     continue
                 
                 lang, code_content = match.groups()
@@ -139,9 +134,7 @@ async def send_long_message(bot: AsyncTeleBot, chat_id: int, text: str, **kwargs
                 
                 if current_chunk_content:
                     final_chunks.append(f"{header}{current_chunk_content.lstrip()}{footer}")
-
             else:
-                # Это длинный обычный текст. Делим его по строкам.
                 lines = part.split('\n')
                 current_chunk = ""
                 for line in lines:
@@ -153,13 +146,11 @@ async def send_long_message(bot: AsyncTeleBot, chat_id: int, text: str, **kwargs
                 if current_chunk:
                     final_chunks.append(current_chunk.lstrip())
         
-        # Шаг 4: Отправляем все сформированные части.
         total_chunks = len(final_chunks)
         if total_chunks == 0: return
 
         for i, chunk in enumerate(final_chunks):
             if not chunk or chunk.isspace(): continue
-
             current_kwargs = {}
             if i == total_chunks - 1:
                 current_kwargs = kwargs
@@ -173,20 +164,45 @@ async def send_long_message(bot: AsyncTeleBot, chat_id: int, text: str, **kwargs
                 await asyncio.sleep(0.5)
 
     except Exception as e:
+        # --- НАЧАЛО НОВОГО, УЛУЧШЕННОГО РЕЗЕРВНОГО МЕХАНИЗМА ---
         logger.error(
-            f"Критическая ошибка при отправке длинного сообщения user_id {chat_id}: {e}. Попытка отправки как простого текста.",
+            f"Основной механизм отправки не справился с Markdown (user_id {chat_id}): {e}. "
+            f"Запускаю резервный механизм с экранированием.",
             extra={'user_id': str(chat_id)}
         )
-        # Резервный механизм: отправляем оригинальный текст простым сплиттером
         try:
+            # Экранируем ВСЕ спецсимволы в ИСХОДНОМ, неформатированном тексте
+            safe_text = th.escape_markdown(text)
+            
+            # Используем LangChain сплиттер для безопасного разделения уже экранированного текста
             text_splitter = MarkdownTextSplitter(chunk_size=MAX_LENGTH, chunk_overlap=100)
-            fallback_chunks = text_splitter.split_text(text)
-            for i, fallback_chunk in enumerate(fallback_chunks):
+            safe_chunks = text_splitter.split_text(safe_text)
+            
+            total_safe_chunks = len(safe_chunks)
+            for i, chunk in enumerate(safe_chunks):
                 current_kwargs = {}
-                if i == len(fallback_chunks) - 1: current_kwargs = kwargs
-                await bot.send_message(chat_id, fallback_chunk, parse_mode=None, **current_kwargs)
+                if i == total_safe_chunks - 1:
+                    current_kwargs = kwargs
+                else:
+                    current_kwargs['disable_web_page_preview'] = kwargs.get('disable_web_page_preview', True)
+                
+                await bot.send_message(chat_id, chunk, parse_mode='MarkdownV2', **current_kwargs)
+                if total_safe_chunks > 1:
+                    await asyncio.sleep(0.5)
+
         except Exception as fallback_e:
-            logger.error(f"Резервный механизм отправки также не сработал для user_id {chat_id}: {fallback_e}", extra={'user_id': str(chat_id)})
+            logger.error(
+                f"Резервный механизм с экранированием также не сработал для user_id {chat_id}: {fallback_e}. "
+                f"Отправка как простого текста.",
+                extra={'user_id': str(chat_id)}
+            )
+            # --- Самый крайний случай: отправка без форматирования ---
+            text_splitter = MarkdownTextSplitter(chunk_size=MAX_LENGTH, chunk_overlap=100)
+            raw_chunks = text_splitter.split_text(text)
+            for i, chunk in enumerate(raw_chunks):
+                 current_kwargs = {}
+                 if i == len(raw_chunks) - 1: current_kwargs = kwargs
+                 await bot.send_message(chat_id, chunk, parse_mode=None, **current_kwargs)
 
 
 async def send_error_reply(

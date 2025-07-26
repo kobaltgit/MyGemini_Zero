@@ -26,6 +26,7 @@ import json
 import re
 from cachetools import LRUCache
 from cryptography.fernet import Fernet
+import telegramify_markdown
 
 from config.settings import DEFAULT_MODEL_ID, GENERATION_CONFIG, MODELS_METADATA, SAFETY_SETTINGS, BOT_PERSONAS, BOT_STYLES
 from utils import guide_manager
@@ -373,10 +374,22 @@ async def generate_response(user_id: int, prompt: Union[str, List[Union[str, PIL
         usage_metadata = response_json.get('usageMetadata', {})
         
         # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        # Проверяем валидность Markdown перед сохранением
+        final_response_for_db = response_text
+        try:
+            telegramify_markdown.markdownify(response_text)
+        except Exception:
+            gemini_logger.warning(
+                f"Ответ от Gemini содержит невалидный Markdown. Будет сохранен в экранированном виде. User: {user_id}",
+                extra={'user_id': str(user_id)}
+            )
+            from utils import text_helpers as th # Локальный импорт
+            final_response_for_db = th.escape_markdown(response_text)
+
         # Теперь сохраняем ответ бота и статистику
         await db_manager.store_message(
             user_id=user_id, dialog_id=active_dialog_id, role='bot',
-            message_text=response_text, fernet_instance=fernet_instance,
+            message_text=final_response_for_db, fernet_instance=fernet_instance,
             prompt_tokens=usage_metadata.get('promptTokenCount', 0),
             completion_tokens=usage_metadata.get('candidatesTokenCount', 0), 
             total_tokens=usage_metadata.get('totalTokenCount', 0)
