@@ -28,6 +28,8 @@ from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 import telegramify_markdown
 
+from handlers.command_handlers import handle_profile
+
 from . import telegram_helpers as tg_helpers
 from utils import markup_helpers as mk
 from utils import localization as loc
@@ -748,6 +750,38 @@ async def _handle_state_archive_period(message: types.Message, bot: AsyncTeleBot
         # ИЗМЕНЕНИЕ 5: Отправляем новое сообщение, чтобы вернуть клавиатуру
         await bot.send_message(user_id, "Вы можете продолжать.", reply_markup=main_keyboard)
 
+async def _handle_state_profile_edit(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обрабатывает ввод нового значения для поля профиля, сохраняет и показывает результат.
+    """
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    new_answer = message.text.strip()
+    
+    async with bot.retrieve_data(user_id, message.chat.id) as data:
+        question_key = data.get('question_to_edit')
+        
+    if not question_key:
+        await bot.delete_state(user_id, message.chat.id)
+        return
+
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
+    if not fernet_instance:
+        await bot.reply_to(message, "Ошибка сессии. Пожалуйста, используйте /start.")
+        await bot.delete_state(user_id, message.chat.id)
+        return
+        
+    # Получаем текущий профиль, обновляем одно поле, сохраняем обратно
+    current_profile = await db_manager.get_user_profile(user_id, fernet_instance) or {}
+    current_profile[question_key] = new_answer
+    await db_manager.save_user_profile(user_id, current_profile, fernet_instance)
+    
+    await bot.delete_state(user_id, message.chat.id)
+    await bot.send_message(user_id, loc.get_text('profile_updated_success', lang_code))
+    
+    # Сразу показываем обновленный профиль, вызывая обработчик команды /profile
+    await handle_profile(message, bot)
+
 # ===================================================================================
 # --- ОБЩИЙ ОБРАБОТЧИК ДЛЯ СООБЩЕНИЙ БЕЗ СОСТОЯНИЯ ---
 # ===================================================================================
@@ -954,6 +988,7 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
         settings.STATE_ZK_WAITING_FOR_PASSWORD_CONFIRM: _handle_state_password_confirm,
         settings.STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK: _handle_state_password_unlock,
         settings.STATE_PROFILE_WAITING_FOR_ANSWER: _handle_state_profile_answer,
+        settings.STATE_PROFILE_EDITING_ANSWER: _handle_state_profile_edit,
         STATE_ZK_WAITING_FOR_PANIC_SETUP: _handle_state_panic_password_setup,
         STATE_ZK_WAITING_FOR_PANIC_CONFIRM: _handle_state_panic_password_confirm,
         STATE_ADMIN_WAITING_FOR_BROADCAST_MSG: _handle_state_admin_broadcast,

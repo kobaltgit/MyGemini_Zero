@@ -44,6 +44,7 @@ from config.settings import (
     CALLBACK_ADMIN_EXTEND_SUB_PREFIX
 )
 from database import db_manager
+from features.profile_manager import QUESTIONNAIRE
 from logger_config import get_logger
 from . import localization as loc
 
@@ -112,6 +113,36 @@ def create_confirm_delete_keyboard(dialog_id: int, lang_code: str) -> types.Inli
     markup.add(confirm_button, cancel_button)
     return markup
 
+def create_profile_view_keyboard(lang_code: str) -> types.InlineKeyboardMarkup:
+    """Создает клавиатуру для режима просмотра профиля с одной кнопкой 'Редактировать'."""
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        text=loc.get_text('btn_enter_edit_mode', lang_code),
+        callback_data=settings.CALLBACK_PROFILE_SHOW_EDIT_OPTIONS
+    ))
+    return markup
+
+def create_profile_edit_menu_keyboard(lang_code: str) -> types.InlineKeyboardMarkup:
+    """Создает клавиатуру для режима редактирования профиля с кнопками для каждого поля."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    
+    # QUESTIONNAIRE импортируется из profile_manager, убедитесь, что импорт есть вверху файла.
+    # Если его нет, добавьте: from features.profile_manager import QUESTIONNAIRE
+    for key in QUESTIONNAIRE.keys():
+        field_name = loc.get_text(f'profile_label_{key}', lang_code)
+        button_text = f"✏️ {field_name}"
+        callback_data = f"{settings.CALLBACK_PROFILE_EDIT_PREFIX}{key}"
+        buttons.append(types.InlineKeyboardButton(text=button_text, callback_data=callback_data))
+
+    for i in range(0, len(buttons), 2):
+        markup.add(*buttons[i:i + 2])
+        
+    markup.add(types.InlineKeyboardButton(
+        text=loc.get_text('btn_back_to_profile_view', lang_code),
+        callback_data=settings.CALLBACK_PROFILE_BACK_TO_VIEW
+    ))
+    return markup
 
 def create_language_selection_keyboard() -> types.InlineKeyboardMarkup:
     """Создает inline-клавиатуру для выбора языка для ПЕРЕВОДА."""

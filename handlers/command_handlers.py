@@ -40,7 +40,7 @@ from config.settings import (
 )
 from database import db_manager
 from services import gemini_service
-from features import personal_account
+from features import personal_account, profile_manager
 from logger_config import get_logger
 from utils import text_helpers as th
 from .decorators import session_required, subscription_required
@@ -141,7 +141,27 @@ async def handle_profile(message: types.Message, bot: AsyncTeleBot):
         message: Объект сообщения Telegram.
         bot: Экземпляр AsyncTeleBot.
     """
-    await personal_account.get_personal_account_info(message, bot)
+    user_id = message.from_user.id
+    lang_code = await db_manager.get_user_language(user_id)
+    fernet_instance = tg_helpers.user_session_keys.get(user_id)
+    
+    # fernet_instance гарантированно существует благодаря декоратору @session_required
+    
+    profile_exists = await db_manager.get_user_profile(user_id, fernet_instance)
+    if not profile_exists:
+        await profile_manager.start_questionnaire(bot, message)
+        return
+
+    info_text = await personal_account.get_personal_account_info(user_id, fernet_instance)
+    
+    full_text = (
+        f"{loc.get_text('profile_combined_title', lang_code)}\n\n"
+        f"{info_text}"
+    )
+    
+    keyboard = mk.create_profile_view_keyboard(lang_code)
+    await bot.send_message(user_id, full_text, reply_markup=keyboard)
+    # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
 
 # --- Команды, требующие активной сессии ---
@@ -297,19 +317,20 @@ async def handle_personal_account_button(message: types.Message, bot: AsyncTeleB
         message: Объект сообщения Telegram.
         bot: Экземпляр AsyncTeleBot.
     """
-    user_id = message.from_user.id
-    lang_code = await db_manager.get_user_language(user_id)
-    fernet_instance = tg_helpers.user_session_keys.get(user_id)
+    await handle_profile(message, bot)
+    # user_id = message.from_user.id
+    # lang_code = await db_manager.get_user_language(user_id)
+    # fernet_instance = tg_helpers.user_session_keys.get(user_id)
 
-    await tg_helpers.send_typing_action(bot, user_id)
+    # await tg_helpers.send_typing_action(bot, user_id)
     
-    info_text = await personal_account.get_personal_account_info(user_id, fernet_instance)
+    # info_text = await personal_account.get_personal_account_info(user_id, fernet_instance)
     
-    main_keyboard = mk.create_main_keyboard(lang_code, user_id)
-    await tg_helpers.send_long_message(
-        bot, user_id, info_text,
-        reply_markup=main_keyboard
-    )
+    # main_keyboard = mk.create_main_keyboard(lang_code, user_id)
+    # await tg_helpers.send_long_message(
+    #     bot, user_id, info_text,
+    #     reply_markup=main_keyboard
+    # )
 
 @subscription_required
 @session_required

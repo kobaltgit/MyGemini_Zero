@@ -262,6 +262,9 @@ CALLBACK_DIALOG_DELETE_PREFIX = 'dialog_delete:'
 CALLBACK_DIALOG_CONFIRM_DELETE_PREFIX = 'dialog_confirm_delete:'
 CALLBACK_DIALOG_CREATE = 'dialog_create'
 CALLBACK_PROFILE_CHOICE = 'profile_choice:'
+CALLBACK_PROFILE_EDIT_PREFIX = 'profile_edit:'
+CALLBACK_PROFILE_SHOW_EDIT_OPTIONS = 'profile_show_edit'
+CALLBACK_PROFILE_BACK_TO_VIEW = 'profile_back_to_view'
 
 # Data Management
 CALLBACK_DATA_MANAGEMENT_MENU = 'data_management_menu'
@@ -324,6 +327,7 @@ STATE_ZK_WAITING_FOR_PASSWORD_UNLOCK = 'zk_waiting_for_password_unlock'
 STATE_PROFILE_WAITING_FOR_ANSWER = 'profile_waiting_for_answer'
 STATE_ZK_WAITING_FOR_PANIC_SETUP = 'zk_waiting_for_panic_setup'
 STATE_ZK_WAITING_FOR_PANIC_CONFIRM = 'zk_waiting_for_panic_confirm'
+STATE_PROFILE_EDITING_ANSWER = 'profile_editing_answer'
 
 # --- НОВЫЙ РАЗДЕЛ: Буферизация сообщений ---
 # Время в секундах, которое бот ждет после последнего сообщения пользователя,
