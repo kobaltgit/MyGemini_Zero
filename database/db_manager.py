@@ -119,7 +119,16 @@ async def _execute_query(query: str, params: tuple = (), fetch_one: bool = False
 # --- Инициализация и миграция БД ---
 
 def setup_database_sync():
-    """Синхронная функция для инициализации и миграции структуры базы данных."""
+    """Синхронная функция для инициализации и миграции структуры базы данных.
+
+    Проверяет наличие всех необходимых таблиц и столбцов, создавая или
+    изменяя их при необходимости. Гарантирует, что схема базы данных
+    соответствует актуальной версии кода.
+
+    Raises:
+        sqlite3.Error: В случае критической ошибки при работе с базой данных,
+                       которая препятствует дальнейшей работе.
+    """
     conn = _get_db_connection()
     cursor = conn.cursor()
     try:
@@ -211,6 +220,25 @@ def setup_database_sync():
             db_logger.info("Добавляем отсутствующий столбец 'content_type' в 'conversations'...")
             cursor.execute("ALTER TABLE conversations ADD COLUMN content_type TEXT DEFAULT 'text' NOT NULL")
 
+        # --- Таблица user_profiles ---
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id INTEGER PRIMARY KEY,
+                profile_data BLOB NOT NULL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        """)
+        # Миграция: Обновление last_updated при изменении
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS update_user_profiles_last_updated
+            AFTER UPDATE ON user_profiles
+            FOR EACH ROW
+            BEGIN
+                UPDATE user_profiles SET last_updated = CURRENT_TIMESTAMP WHERE user_id = OLD.user_id;
+            END;
+        """)
+
         conn.commit()
         db_logger.info("Проверка и настройка базы данных завершена.")
     except Exception as e:
@@ -222,14 +250,31 @@ def setup_database_sync():
 
 
 async def set_user_api_key(user_id: int, api_key: str, fernet_instance: Fernet):
-    """Шифрует и сохраняет API-ключ пользователя."""
+    """Шифрует и сохраняет API-ключ пользователя.
+
+    Args:
+        user_id (int): ID пользователя, для которого сохраняется ключ.
+        api_key (str): API-ключ в открытом виде.
+        fernet_instance (Fernet): Экземпляр Fernet с активным ключом сессии
+            для шифрования.
+    """
     encrypted_key = crypto_helpers.encrypt_data(api_key, fernet_instance)
     query = "UPDATE users SET api_key = ? WHERE user_id = ?"
     await _execute_query(query, (encrypted_key, user_id), is_write_operation=True)
     db_logger.info(f"API-ключ для пользователя {user_id} был зашифрован и сохранен.")
 
 async def get_user_api_key(user_id: int, fernet_instance: Fernet) -> Optional[str]:
-    # ... (код без изменений)
+    """Извлекает и расшифровывает API-ключ пользователя.
+
+    Args:
+        user_id (int): ID пользователя.
+        fernet_instance (Fernet): Экземпляр Fernet с активным ключом сессии
+            для дешифрования.
+
+    Returns:
+        Optional[str]: Расшифрованный API-ключ или None, если ключ не найден
+                       или произошла ошибка дешифровки.
+    """
     query = "SELECT api_key FROM users WHERE user_id = ?"
     result = await _execute_query(query, (user_id,), fetch_one=True)
     if result and result['api_key']:
@@ -237,7 +282,17 @@ async def get_user_api_key(user_id: int, fernet_instance: Fernet) -> Optional[st
     return None
 
 async def is_api_key_set(user_id: int) -> bool:
-    """Проверяет, установлен ли API-ключ, не расшифровывая его."""
+    """Проверяет, установлен ли API-ключ, не расшифровывая его.
+
+    Используется для проверок, не требующих доступа к самому ключу,
+    чтобы избежать необходимости в активной сессии.
+
+    Args:
+        user_id (int): ID пользователя.
+
+    Returns:
+        bool: True, если поле с ключом в базе данных не пустое, иначе False.
+    """
     query = "SELECT api_key FROM users WHERE user_id = ?"
     result = await _execute_query(query, (user_id,), fetch_one=True)
     return result is not None and result['api_key'] is not None
@@ -863,7 +918,8 @@ async def clear_user_content(user_id: int, fernet_instance: Fernet):
 
     Args:
         user_id (int): ID пользователя для очистки.
-        fernet_instance (Fernet): Ключ сессии для доступа к API-ключу Google.
+        fernet_instance (Fernet): Ключ сессии для доступа к API-ключу Google,
+                                  необходимому для очистки векторного хранилища.
     """
     db_logger.warning(f"Начата полная очистка контента для пользователя {user_id}.")
 
