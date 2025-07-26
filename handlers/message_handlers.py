@@ -22,7 +22,8 @@
 import datetime
 import PIL.Image
 from io import BytesIO
-from typing import List, Union
+import asyncio
+from typing import Dict, List, Union
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 import telegramify_markdown
@@ -55,6 +56,12 @@ from logger_config import get_logger
 
 logger = get_logger(__name__)
 user_logger = get_logger('user_messages')
+
+# --- Глобальные переменные для буферизации сообщений ---
+# {user_id: [message_text_1, message_text_2]}
+message_buffers: Dict[int, List[str]] = {}
+# {user_id: asyncio.Task}
+user_timers: Dict[int, asyncio.Task] = {}
 
 # --- СПИСОК ВСЕХ КНОПОК ДЛЯ ИСКЛЮЧЕНИЯ ИЗ УНИВЕРСАЛЬНОГО ОБРАБОТЧИКА ---
 BUTTON_KEYS = [
@@ -745,22 +752,24 @@ async def _handle_state_archive_period(message: types.Message, bot: AsyncTeleBot
 # --- ОБЩИЙ ОБРАБОТЧИК ДЛЯ СООБЩЕНИЙ БЕЗ СОСТОЯНИЯ ---
 # ===================================================================================
 
-async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
+async def _process_and_send_response(bot: AsyncTeleBot, message: types.Message, prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]], content_type: str):
     """
-    Обрабатывает входящие сообщения пользователя, когда нет активного состояния.
+    Финальный этап обработки: отправляет запрос к Gemini и посылает ответ.
+
+    Эта функция вызывается либо немедленно для нетекстовых сообщений, либо
+    по истечении таймера для объединенных текстовых сообщений.
 
     Args:
-        message (types.Message): Объект входящего сообщения Telegram.
-        bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
+        bot (AsyncTeleBot): Экземпляр бота.
+        message (types.Message): Оригинальный объект сообщения для получения
+            контекста (user_id, chat_id).
+        prompt (Union[str, List[Union[str, PIL.Image.Image, bytes]]]):
+            Сформированный промпт (текст или список с медиа).
+        content_type (str): Тип контента ('text', 'photo', 'voice').
     """
-    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
-        return
-        
     user_id = message.from_user.id
     lang_code = await db_manager.get_user_language(user_id)
     fernet_instance = tg_helpers.user_session_keys.get(user_id)
-    
-    content_type = message.content_type
     
     try:
         api_key = await db_manager.get_user_api_key(user_id, fernet_instance)
@@ -770,25 +779,7 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
             return
 
         await tg_helpers.send_typing_action(bot, user_id)
-
-        prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]]
-        if content_type == 'text':
-            prompt = message.text
-        elif content_type == 'photo':
-            file_info = await bot.get_file(message.photo[-1].file_id)
-            downloaded_bytes = await bot.download_file(file_info.file_path)
-            image = PIL.Image.open(BytesIO(downloaded_bytes))
-            prompt_text = message.caption or "Опиши это изображение."
-            prompt = [prompt_text, image]
-        elif content_type == 'voice':
-             file_info = await bot.get_file(message.voice.file_id)
-             downloaded_bytes = await bot.download_file(file_info.file_path)
-             prompt_text = "Расшифруй это аудиосообщение и ответь на него."
-             prompt = [prompt_text, downloaded_bytes]
-        else:
-            await bot.reply_to(message, loc.get_text('unsupported_content', lang_code))
-            return
-
+        
         response_text, sources = await gemini_service.generate_response(user_id, prompt, api_key, fernet_instance, content_type)
         
         header = await _create_context_header(user_id, lang_code)
@@ -813,8 +804,100 @@ async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
         await tg_helpers.send_long_message(bot, user_id, user_friendly_error, reply_markup=error_markup)
         
     except Exception as e:
-        await tg_helpers.send_error_reply(bot, message, f"Критическая ошибка в _handle_no_state_message: {e}")
+        await tg_helpers.send_error_reply(bot, message, f"Критическая ошибка в _process_and_send_response: {e}")
         await bot.delete_state(user_id, message.chat.id)
+
+
+async def _process_buffered_messages_task(bot: AsyncTeleBot, message: types.Message):
+    """
+    Задача-таймер, которая ждет, объединяет сообщения и запускает их обработку.
+
+    Args:
+        bot (AsyncTeleBot): Экземпляр бота.
+        message (types.Message): Последний объект сообщения, который триггернул
+            эту задачу. Нужен для передачи контекста.
+    """
+    user_id = message.from_user.id
+    try:
+        await asyncio.sleep(settings.MESSAGE_BUFFER_TIMEOUT)
+        
+        # Получаем и объединяем сообщения
+        buffered_parts = message_buffers.get(user_id, [])
+        if not buffered_parts:
+            return
+            
+        combined_text = "\n".join(buffered_parts)
+        logger.info(f"Таймер для user_id {user_id} сработал. Отправка объединенного сообщения: '{combined_text[:100]}...'", extra={'user_id': str(user_id)})
+        
+        # Очищаем буфер и таймер ПЕРЕД отправкой
+        if user_id in message_buffers:
+            del message_buffers[user_id]
+        if user_id in user_timers:
+            del user_timers[user_id]
+            
+        # Запускаем обработку
+        await _process_and_send_response(bot, message, combined_text, 'text')
+        
+    except asyncio.CancelledError:
+        logger.debug(f"Таймер для user_id {user_id} отменен (получено новое сообщение).", extra={'user_id': str(user_id)})
+    except Exception as e:
+        logger.exception(f"Ошибка в задаче обработки буфера для user_id {user_id}: {e}", extra={'user_id': str(user_id)})
+        # Очистка в случае сбоя
+        if user_id in message_buffers:
+            del message_buffers[user_id]
+        if user_id in user_timers:
+            del user_timers[user_id]
+
+
+async def _handle_no_state_message(message: types.Message, bot: AsyncTeleBot):
+    """
+    Обрабатывает входящие сообщения, когда нет активного состояния.
+    Управляет буферизацией для текстовых сообщений.
+
+    Args:
+        message (types.Message): Объект входящего сообщения Telegram.
+        bot (AsyncTeleBot): Экземпляр асинхронного Telegram-бота.
+    """
+    if not await tg_helpers.check_session_and_prompt_for_unlock(bot, message):
+        return
+        
+    user_id = message.from_user.id
+    content_type = message.content_type
+
+    # --- ЛОГИКА БУФЕРИЗАЦИИ ---
+    if content_type == 'text':
+        # 1. Если для пользователя уже есть таймер, отменяем его
+        if user_id in user_timers:
+            user_timers[user_id].cancel()
+        
+        # 2. Добавляем текст нового сообщения в буфер
+        if user_id not in message_buffers:
+            message_buffers[user_id] = []
+        message_buffers[user_id].append(message.text)
+        
+        # 3. Запускаем новый таймер
+        task = asyncio.create_task(_process_buffered_messages_task(bot, message))
+        user_timers[user_id] = task
+        return
+
+    # --- ОБРАБОТКА НЕ-ТЕКСТОВЫХ СООБЩЕНИЙ (сразу, без буфера) ---
+    prompt: Union[str, List[Union[str, PIL.Image.Image, bytes]]]
+    if content_type == 'photo':
+        file_info = await bot.get_file(message.photo[-1].file_id)
+        downloaded_bytes = await bot.download_file(file_info.file_path)
+        image = PIL.Image.open(BytesIO(downloaded_bytes))
+        prompt_text = message.caption or "Опиши это изображение."
+        prompt = [prompt_text, image]
+        await _process_and_send_response(bot, message, prompt, content_type)
+    elif content_type == 'voice':
+        file_info = await bot.get_file(message.voice.file_id)
+        downloaded_bytes = await bot.download_file(file_info.file_path)
+        prompt_text = "Расшифруй это аудиосообщение и ответь на него."
+        prompt = [prompt_text, downloaded_bytes]
+        await _process_and_send_response(bot, message, prompt, content_type)
+    else:
+        lang_code = await db_manager.get_user_language(user_id)
+        await bot.reply_to(message, loc.get_text('unsupported_content', lang_code))
 
 # ===================================================================================
 # --- ГЛАВНЫЙ ЕДИНЫЙ ОБРАБОТЧИК И РЕГИСТРАЦИЯ ---
@@ -894,10 +977,8 @@ async def universal_message_router(message: types.Message, bot: AsyncTeleBot):
              return
         await handler(message, bot)
     elif current_state is None:
-        if message.content_type in ['text', 'photo', 'voice']:
-            await _handle_no_state_message(message, bot)
-        else:
-            await bot.reply_to(message, loc.get_text('unsupported_content', lang_code))
+        # --- ИЗМЕНЕНИЕ: Вся логика (буферизация и обработка) теперь внутри _handle_no_state_message ---
+        await _handle_no_state_message(message, bot)
     else:
         await bot.reply_to(message, loc.get_text('state_wrong_content_type', lang_code))
 

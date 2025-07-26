@@ -325,5 +325,10 @@ STATE_PROFILE_WAITING_FOR_ANSWER = 'profile_waiting_for_answer'
 STATE_ZK_WAITING_FOR_PANIC_SETUP = 'zk_waiting_for_panic_setup'
 STATE_ZK_WAITING_FOR_PANIC_CONFIRM = 'zk_waiting_for_panic_confirm'
 
+# --- НОВЫЙ РАЗДЕЛ: Буферизация сообщений ---
+# Время в секундах, которое бот ждет после последнего сообщения пользователя,
+# прежде чем объединить все полученные сообщения в один запрос.
+MESSAGE_BUFFER_TIMEOUT = 1.5 # 1.5 секунды
+
 
 print(f"Конфигурация MyGemini/settings.py загружена. Модель Gemini: {DEFAULT_MODEL_ID}")
