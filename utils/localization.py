@@ -110,7 +110,10 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
                  "*/settings* - Открыть меню настроек\n"
                  "*/set_api_key* - Установить/обновить API ключ\n"
                  "*/help_guide* - 📖 Полное руководство по функциям\n"
-                 "*/apikey_info* - 🔑 Инструкция по созданию API ключа",
+                 "*/apikey_info* - 🔑 Инструкция по созданию API ключа\n"
+                 "--- Официальная группа поддержки ---\n"
+                 "@MyGeminiZero_Support\n",
+
         # --- Настройки ---
         'settings_title': "⚙️ *Настройки бота*",
         'settings_style_section': "--- Стиль общения бота ---",
@@ -431,7 +434,9 @@ LOCALIZATION: Dict[str, Dict[str, str]] = {
                  "*/settings* - Open the settings menu\n"
                  "*/set_api_key* - Set or update your API key\n"
                  "*/help_guide* - 📖 Full user manual\n"
-                 "*/apikey_info* - 🔑 How to create an API key",
+                 "*/apikey_info* - 🔑 How to create an API key"
+                 "--- Official Support Group ---\n"
+                 "@MyGeminiZero_Support\n",
         # --- Settings ---
         'settings_title': "⚙️ *Bot Settings*",
         'settings_style_section': "--- Bot Communication Style ---",
