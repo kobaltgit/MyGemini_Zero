@@ -1,0 +1,52 @@
+# .github/workflows/deploy-docs.yml
+
+name: Deploy Docs to GitHub Pages
+
+on:
+  # Запускать при пуше в ветку feature/subscription-model
+  push:
+    branches: ["feature/subscription-model"] # <-- ИЗМЕНЕНИЕ ЗДЕСЬ
+  
+  # Позволяет запускать этот воркфлоу вручную со страницы Actions
+  workflow_dispatch:
+
+# Устанавливаем права для GITHUB_TOKEN, чтобы разрешить развертывание на GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Разрешаем только одно одновременное развертывание, отменяя предыдущие запуски
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # Задача развертывания
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1' # Используем стабильную версию Ruby
+          bundler-cache: true # Автоматически устанавливает зависимости из Gemfile
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Build with Jekyll
+        # Собираем сайт с правильным baseurl для GitHub Pages
+        run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
+        env:
+          JEKYLL_ENV: production
+      - name: Upload artifact
+        # Автоматически загружает артефакт для развертывания
+        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
