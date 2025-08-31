@@ -1,0 +1,31 @@
+# Основная тема для сайта документации
+theme: just-the-docs
+
+# Название сайта, которое будет отображаться в шапке
+title: MyGemini Zero | Руководство
+
+# Описание для поисковых систем
+description: Полное руководство по настройке и использованию приватного ИИ-ассистента MyGemini Zero в Telegram.
+
+# URL вашего сайта. Это КРАЙНЕ ВАЖНО для корректной работы ссылок и стилей.
+url: "https://kobaltgit.github.io/MyGemini_Zero/"
+
+# Добавляет логотип в шапку сайта.
+# Создайте папку assets/images в вашем репозитории и положите туда файл logo.png
+logo: "/assets/images/logo.png"
+
+# Цветовая схема (dark, light или auto)
+color_scheme: dark
+
+# Включаем встроенную функцию поиска по сайту
+search_enabled: true
+
+# Добавляем полезные ссылки в шапку сайта
+aux_links:
+  "Репозиторий на GitHub":
+    - "https://github.com/kobaltgit/MyGemini_Zero"
+  "Telegram-бот MyGemini Zero":
+    - "https://t.me/mgemz_bot"
+
+# Настройка текста в футере (подвале) сайта
+footer_content: "Copyright &copy; 2025 kobaltgit. Распространяется под лицензией <a href=\"https://www.gnu.org/licenses/agpl-3.0.html\">AGPL-3.0</a>."
