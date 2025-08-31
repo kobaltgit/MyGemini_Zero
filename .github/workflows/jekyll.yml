@@ -5,7 +5,7 @@ name: Deploy Docs to GitHub Pages
 on:
   # Запускать при пуше в ветку main
   push:
-    branches: ["main"]
+    branches: ["feature/subscription-model"]
   # Позволяет запускать этот воркфлоу вручную со страницы Actions
   workflow_dispatch:
 
