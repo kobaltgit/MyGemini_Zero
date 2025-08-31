@@ -1,6 +1,10 @@
 # Основная тема для сайта документации
 theme: just-the-docs
 
+# Указываем плагины, чтобы GitHub Pages корректно нашел тему
+plugins:
+  - just-the-docs
+
 # Название сайта, которое будет отображаться в шапке
 title: MyGemini Zero | Руководство
 
@@ -12,7 +16,7 @@ url: "https://kobaltgit.github.io/MyGemini_Zero/"
 
 # Добавляет логотип в шапку сайта.
 # Создайте папку assets/images в вашем репозитории и положите туда файл logo.png
-logo: "/assets/images/logo.png"
+# logo: "/assets/images/logo.png"
 
 # Цветовая схема (dark, light или auto)
 color_scheme: dark
