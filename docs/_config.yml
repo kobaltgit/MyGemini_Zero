@@ -56,11 +56,11 @@ enable_copy_code_button: true
 heading_anchors: true
 
 # Show navigation error report
-nav_error_report: true # default is false/nil.
+# nav_error_report: true # default is false/nil.
 
-liquid:
-  error_mode: strict
-  strict_filters: true
+# liquid:
+#   error_mode: strict
+#   strict_filters: true
 
 # Back to top link
 back_to_top: true
@@ -70,24 +70,24 @@ back_to_top_text: "Back to top"
 footer_content: "Copyright &copy; 2025 kobaltgit. Распространяется под лицензией <a href=\"https://www.gnu.org/licenses/agpl-3.0.html\">AGPL-3.0</a>."
 
 # Color scheme currently only supports "dark", "light"/nil (default), or a custom scheme that you define
-color_scheme: nil
+# color_scheme: nil
 
-callouts_level: quiet # or loud
-callouts:
-  highlight:
-    color: yellow
-  important:
-    title: Important
-    color: blue
-  new:
-    title: New
-    color: green
-  note:
-    title: Note
-    color: purple
-  warning:
-    title: Warning
-    color: red
+# callouts_level: quiet # or loud
+# callouts:
+#   highlight:
+#     color: yellow
+#   important:
+#     title: Important
+#     color: blue
+#   new:
+#     title: New
+#     color: green
+#   note:
+#     title: Note
+#     color: purple
+#   warning:
+#     title: Warning
+#     color: red
 
 # Включаем Jekyll SEO Tag плагин для лучшей оптимизации
 plugins:
