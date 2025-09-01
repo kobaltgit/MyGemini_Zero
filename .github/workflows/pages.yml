@@ -1,0 +1,52 @@
+name: Build and Deploy Docs
+
+on:
+  # Запускать при пуше в вашу рабочую ветку
+  push:
+    branches: ["feature/subscription-model"]
+  
+  # Позволяет запускать вручную со страницы Actions
+  workflow_dispatch:
+
+# Права доступа
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  # Единая задача для сборки и развертывания
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby and install dependencies
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1'
+          # Указываем, что Gemfile лежит в папке docs
+          working-directory: ./docs
+          # Эта опция кэширует зависимости, чтобы ускорить будущие запуски
+          bundler-cache: true
+
+      - name: Build the Jekyll site
+        run: |
+          cd ./docs
+          bundle exec jekyll build
+        env:
+          JEKYLL_ENV: production
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Загружаем собранный сайт из папки _site внутри docs
+          path: ./docs/_site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
