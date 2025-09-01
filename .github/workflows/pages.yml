@@ -23,15 +23,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
+
+      - name: Setup Ruby and cache dependencies
+        uses: ruby/setup-ruby@v1
         with:
-          source: ./docs
-          destination: ./_site
+          ruby-version: '3.1'
+          bundler-cache: true
+          working-directory: './docs' # Указываем, что Gemfile и зависимости находятся в папке docs
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build with Jekyll
+        # Явно запускаем сборку из папки docs, используя установленные зависимости
+        run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
+        working-directory: ./docs # Указываем рабочую директорию для команды
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          # Загружаем собранный сайт из папки _site, которая находится внутри docs
+          path: ./docs/_site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
