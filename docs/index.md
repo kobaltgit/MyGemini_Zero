@@ -3,6 +3,7 @@
 layout: home
 title: Главная
 nav_order: 1
+class: homepage
 ---
 
 # MyGemini Zero: Ваш приватный ИИ-ассистент
@@ -13,6 +14,7 @@ nav_order: 1
 [:material-github: Репозиторий на GitHub](https://github.com/kobaltgit/MyGemini_Zero){ .md-button }
 
 ---
+![Первый запуск](assets/anim.gif)
 
 ## Что такое MyGemini Zero?
 
