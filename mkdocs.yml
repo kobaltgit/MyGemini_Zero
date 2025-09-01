@@ -1,6 +1,7 @@
 site_name: MyGemini Zero | Руководство
 repo_url: https://github.com/kobaltgit/MyGemini_Zero
 site_url: https://kobaltgit.github.io/MyGemini_Zero
+repo_name: kobaltgit/MyGemini_Zero
 theme:
   features:
     - navigation.footer
