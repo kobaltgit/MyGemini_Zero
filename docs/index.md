@@ -11,7 +11,7 @@ nav_order: 1
 Полное руководство по настройке и использованию вашего персонального ассистента с долговременной памятью и Zero-Knowledge шифрованием.
 {: .fs-6 .text-grey-dk-000 }
 
-[➡️ Начать работу (Быстрый старт)](./quick-start.md){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
+[➡️ Начать работу (Быстрый старт)](./quick-start.html){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [Репозиторий на GitHub](https://github.com/kobaltgit/MyGemini_Zero){: .btn .fs-5 .mb-4 .mb-md-0 }
 
 ---
