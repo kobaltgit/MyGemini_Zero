@@ -6,6 +6,9 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)
 ](https://www.python.org/downloads/)
 [
+![Documentation](https://img.shields.io/badge/docs-MkDocs-green.svg?style=flat-square)
+](https://kobaltgit.github.io/MyGemini_Zero)
+[
 ![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg?style=flat-square)
 ](https://www.gnu.org/licenses/agpl-3.0)
 [
