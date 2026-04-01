@@ -1,6 +1,6 @@
 # MyGemini Zero: Ваш Приватный ИИ-Ассистент с Долговременной Памятью
 
-### [Read in English](readme_en.md)
+### [📖 Читать полную документацию](https://kobaltgit.github.io/MyGemini_Zero) | [Read in English](readme_en.md)
 
 [
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)
